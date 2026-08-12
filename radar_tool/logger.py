@@ -8,13 +8,10 @@
 import os
 import logging
 from datetime import datetime
-
-
-# 项目根目录 (tool/)
-_TOOL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from .runtime_paths import get_user_data_dir
 
 # 日志目录
-LOG_DIR = os.path.join(_TOOL_DIR, '日志')
+LOG_DIR = get_user_data_dir('日志')
 
 # 日志文件路径 (按日期)
 LOG_FILE = os.path.join(LOG_DIR, f"运行日志_{datetime.now().strftime('%Y%m%d')}.log")

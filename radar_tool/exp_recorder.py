@@ -39,10 +39,11 @@ from .ui_theme import (
     set_button_icon, style_primary_button, style_warning_button, style_calc_button
 )
 from .logger import get_logger
+from .runtime_paths import get_user_data_dir, get_resource_path
 
 logger = get_logger('exp_recorder')
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '试验数据')
+DATA_DIR = get_user_data_dir('试验数据')
 os.makedirs(DATA_DIR, exist_ok=True)
 IMAGES_DIR = os.path.join(DATA_DIR, 'images')
 os.makedirs(IMAGES_DIR, exist_ok=True)
