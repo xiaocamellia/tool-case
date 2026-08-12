@@ -7,6 +7,7 @@ import os
 import json
 import datetime
 import hashlib
+import shutil
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox,
     QPushButton, QLabel, QFileDialog, QComboBox, QDoubleSpinBox,
@@ -43,6 +44,8 @@ logger = get_logger('exp_recorder')
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '试验数据')
 os.makedirs(DATA_DIR, exist_ok=True)
+IMAGES_DIR = os.path.join(DATA_DIR, 'images')
+os.makedirs(IMAGES_DIR, exist_ok=True)
 
 
 class ExpRecorderPanel(QWidget):
@@ -54,6 +57,7 @@ class ExpRecorderPanel(QWidget):
         self.current_project_id = None
         self.current_task_id = None
         self.current_record_id = None
+        self._record_dirty = False
         self._load_data()
         self._init_ui()
         logger.info('试验记录助手已创建')
@@ -252,6 +256,7 @@ class ExpRecorderPanel(QWidget):
         self.edit_title.setPlaceholderText('请输入试验记录标题')
         self.edit_title.setStyleSheet('font-size: 16px; font-weight: bold; padding: 6px;')
         self.edit_layout.addWidget(self.edit_title)
+        self.edit_title.textChanged.connect(self._mark_record_dirty)
 
         # 基本信息
         info_group = QGroupBox('基本信息')
@@ -261,26 +266,31 @@ class ExpRecorderPanel(QWidget):
         self.edit_date = QDateEdit()
         self.edit_date.setDate(QDate.currentDate())
         self.edit_date.setCalendarPopup(True)
+        self.edit_date.dateChanged.connect(self._mark_record_dirty)
         info_layout.addWidget(self.edit_date, 0, 1)
 
         info_layout.addWidget(QLabel('试验人员:'), 0, 2)
         self.edit_personnel = QLineEdit()
         self.edit_personnel.setPlaceholderText('姓名1, 姓名2')
+        self.edit_personnel.textChanged.connect(self._mark_record_dirty)
         info_layout.addWidget(self.edit_personnel, 0, 3)
 
         info_layout.addWidget(QLabel('试验地点:'), 1, 0)
         self.edit_location = QLineEdit()
         self.edit_location.setPlaceholderText('外场/暗室/实验室')
+        self.edit_location.textChanged.connect(self._mark_record_dirty)
         info_layout.addWidget(self.edit_location, 1, 1)
 
         info_layout.addWidget(QLabel('模板选择:'), 1, 2)
         self.combo_template = QComboBox()
         self.combo_template.addItems(['暗室天线测试', '外场雷达试验', '系统联调测试', '通用试验记录'])
+        self.combo_template.currentIndexChanged.connect(self._mark_record_dirty)
         info_layout.addWidget(self.combo_template, 1, 3)
 
         info_layout.addWidget(QLabel('环境条件:'), 2, 0)
         self.edit_conditions = QLineEdit()
         self.edit_conditions.setPlaceholderText('天气/温度/湿度等')
+        self.edit_conditions.textChanged.connect(self._mark_record_dirty)
         info_layout.addWidget(self.edit_conditions, 2, 1, 1, 3)
 
         self.edit_layout.addWidget(info_group)
@@ -291,6 +301,7 @@ class ExpRecorderPanel(QWidget):
         self.edit_content = QTextEdit()
         self.edit_content.setPlaceholderText('描述试验目的、测试项目、配置信息等...')
         self.edit_content.setMinimumHeight(100)
+        self.edit_content.textChanged.connect(self._mark_record_dirty)
         content_layout.addWidget(self.edit_content)
         self.edit_layout.addWidget(content_group)
 
@@ -310,6 +321,7 @@ class ExpRecorderPanel(QWidget):
         self.edit_conclusion = QTextEdit()
         self.edit_conclusion.setPlaceholderText('试验结论、问题汇总、后续计划...')
         self.edit_conclusion.setMinimumHeight(80)
+        self.edit_conclusion.textChanged.connect(self._mark_record_dirty)
         concl_layout.addWidget(self.edit_conclusion)
         self.edit_layout.addWidget(concl_group)
 
@@ -466,8 +478,12 @@ class ExpRecorderPanel(QWidget):
 
         if data[0] == 'record':
             _, pid, tid, rid = data
+            if self._has_current_record() and (pid, tid, rid) != (self.current_project_id, self.current_task_id, self.current_record_id):
+                self._save_current_record(quiet=True)
             self._load_record(pid, tid, rid)
         elif data[0] in ('project', 'task'):
+            if self._has_current_record():
+                self._save_current_record(quiet=True)
             self.stacked.setCurrentIndex(0)
 
     def _new_project(self):
@@ -629,12 +645,14 @@ class ExpRecorderPanel(QWidget):
 
         self.stacked.setCurrentIndex(1)
         self.lbl_save_status.setText('已加载')
+        self._record_dirty = False
 
-    def _save_current_record(self):
+    def _save_current_record(self, quiet=False):
         """保存当前记录（含图注信息）"""
         if not all([self.current_project_id, self.current_task_id, self.current_record_id]):
-            QMessageBox.information(self, '提示', '没有正在编辑的记录')
-            return
+            if not quiet:
+                QMessageBox.information(self, '提示', '没有正在编辑的记录')
+            return False
 
         steps_data = []
         for sw in self.step_widgets:
@@ -643,10 +661,9 @@ class ExpRecorderPanel(QWidget):
                 item = sw['img_list'].item(i)
                 data = item.data(Qt.UserRole)
                 if data:
-                    if isinstance(data, str):
-                        step_images.append({'path': data, 'caption': ''})
-                    else:
-                        step_images.append(data)
+                    normalized = self._normalize_image_item(data)
+                    if normalized:
+                        step_images.append(normalized)
             steps_data.append({
                 'title': sw['title'].text(),
                 'desc': sw['desc'].toPlainText(),
@@ -657,7 +674,7 @@ class ExpRecorderPanel(QWidget):
         try:
             rec = self.projects[self.current_project_id]['tasks'][self.current_task_id]['records'][self.current_record_id]
         except KeyError:
-            return
+            return False
 
         rec['title'] = self.edit_title.text()
         rec['date'] = self.edit_date.date().toString('yyyy-MM-dd')
@@ -673,7 +690,9 @@ class ExpRecorderPanel(QWidget):
         self._save_data()
         self._refresh_tree()
         self.lbl_save_status.setText('✅ 已保存 ' + datetime.datetime.now().strftime('%H:%M'))
+        self._record_dirty = False
         logger.info(f'保存记录: {rec["title"]}')
+        return True
 
     def _delete_selected(self):
         """删除选中的项目/任务/记录"""
@@ -710,6 +729,49 @@ class ExpRecorderPanel(QWidget):
         self._save_data()
         self._refresh_tree()
         logger.info('删除成功')
+
+    def closeEvent(self, event):
+        if self._has_current_record():
+            self._save_current_record(quiet=True)
+        super().closeEvent(event)
+
+    def _has_current_record(self):
+        return all([self.current_project_id, self.current_task_id, self.current_record_id])
+
+    def _mark_record_dirty(self, *args):
+        if self._has_current_record():
+            self._record_dirty = True
+            self.lbl_save_status.setText('未保存')
+
+    def _image_storage_dir(self, pid, tid, rid):
+        path = os.path.join(IMAGES_DIR, pid, tid, rid)
+        os.makedirs(path, exist_ok=True)
+        return path
+
+    def _normalize_image_item(self, data):
+        if isinstance(data, str):
+            data = {'path': data, 'caption': ''}
+        if not isinstance(data, dict):
+            return None
+        src = data.get('path', '')
+        if not src or not os.path.exists(src):
+            return None
+        caption = data.get('caption', '')
+        pid = self.current_project_id or 'unknown_project'
+        tid = self.current_task_id or 'unknown_task'
+        rid = self.current_record_id or 'unknown_record'
+        storage_dir = self._image_storage_dir(pid, tid, rid)
+        base = os.path.basename(src)
+        stem, ext = os.path.splitext(base)
+        digest = hashlib.md5((src + str(os.path.getmtime(src))).encode('utf-8', 'ignore')).hexdigest()[:8]
+        dst = os.path.join(storage_dir, f'{stem}_{digest}{ext}')
+        try:
+            if os.path.abspath(src) != os.path.abspath(dst):
+                shutil.copy2(src, dst)
+            return {'path': dst, 'caption': caption}
+        except Exception as e:
+            logger.warning(f'复制截图失败[{src}]: {e}')
+            return {'path': src, 'caption': caption}
 
     # ==================== 工科报告内置样式模板 - 方案B（全黑/灰军工规范）====================
 
