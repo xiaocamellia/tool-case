@@ -28,12 +28,23 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
         self.setGeometry(100, 100, 1400, 900)
 
         self.compare_test_df = None
+        self.compare_test_original_df = None
+        self.compare_test_source_indices = None
+        self.compare_preprocess_revision = 0
         self.compare_truth_df = None
         self.compare_test_filepath = ''
         self.compare_truth_filepath = ''
         self.compare_meta_cols = None
+        self.compare_meta_filepath = ''
         self.compare_last_result = None
+        self.compare_last_output = None
         self.compare_last_metrics = None
+        self.compare_last_interpolated_count = None
+        self.compare_last_interpolated_valid_count = None
+        self.compare_last_aligned_valid_count = None
+        self.compare_last_paired_count = None
+        self.compare_coarse_output = None
+        self.compare_coarse_mapping = None
 
         self._init_ui()
         self._apply_theme()
@@ -45,23 +56,27 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
         main_layout = QVBoxLayout(central)
 
         self.feature_tabs = QTabWidget()
-        self._tab_panels = [None] * 7
-        self._tab_loaded = [False] * 7
+        self._tab_panels = [None] * 9
+        self._tab_loaded = [False] * 9
         self._tab_factories = [
             self._create_viz_tab,
             self._create_compare_tab,
             self._create_interferometer_tab,
+            self._create_calibration_tab,
             self._create_array_designer_tab,
             self._create_calc_tab,
+            self._create_format_conversion_tab,
             self._create_recorder_tab,
             self._create_game_tab,
         ]
         self._tab_names = [
             '数据可视化处理',
-            '挂飞对比分析',
+            '数据真值复核',
             '干涉仪测向仿真',
+            '测向校正自动化',
             '📡 阵列设计助手',
             '🧮 指标计算器',
+            '格式转换',
             '📋 试验记录助手',
             '🎮 摸鱼游戏',
         ]
@@ -69,12 +84,12 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
         # 第 0 页（可视化）立即创建并添加到 tabs
         panel0 = self._lazy_create_or_get_panel(0)
         self.feature_tabs.addTab(panel0, self._tab_names[0])
-        for i in range(1, 7):
+        for i in range(1, len(self._tab_names)):
             self.feature_tabs.addTab(QWidget(), self._tab_names[i])
 
         self.feature_tabs.currentChanged.connect(self._on_tab_changed)
         main_layout.addWidget(self.feature_tabs, 1)
-        logger.info('UI 初始化完成: 可视化(已加载) + 6个面板(延迟加载)')
+        logger.info('UI 初始化完成: 可视化(已加载) + 8个面板(延迟加载)')
 
         self.status_label = QLabel('就绪')
         self.statusBar().addWidget(self.status_label)
@@ -98,7 +113,7 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
         return panel
 
     def _on_tab_changed(self, index):
-        if index < 0 or index >= 7:
+        if index < 0 or index >= len(self._tab_names):
             return
         if self._tab_loaded[index]:
             return
@@ -125,6 +140,10 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
         from .interferometer_sim import InterferometerSimPanel
         return InterferometerSimPanel(self)
 
+    def _create_calibration_tab(self):
+        from .calibration_panel import CalibrationPanel
+        return CalibrationPanel(self)
+
     def _create_array_designer_tab(self):
         from .array_designer import ArrayDesignerPanel
         return ArrayDesignerPanel(self)
@@ -132,6 +151,10 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
     def _create_calc_tab(self):
         from .calc_panel import CalcPanel
         return CalcPanel(self)
+
+    def _create_format_conversion_tab(self):
+        from .format_conversion_panel import FormatConversionPanel
+        return FormatConversionPanel(self)
 
     def _create_recorder_tab(self):
         from .exp_recorder import ExpRecorderPanel
