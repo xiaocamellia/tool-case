@@ -1515,27 +1515,42 @@ class ExpRecorderPanel(QWidget):
     # ==================== 数据持久化 ====================
 
     def _save_data(self):
-        """保存数据到本地JSON文件"""
+        """保存数据到本地JSON文件（临时文件 + 原子替换）"""
         filepath = os.path.join(DATA_DIR, 'experiments.json')
+        temporary_path = filepath + '.tmp'
         try:
-            with open(filepath, 'w', encoding='utf-8') as f:
+            os.makedirs(DATA_DIR, exist_ok=True)
+            with open(temporary_path, 'w', encoding='utf-8') as f:
                 json.dump(self.projects, f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temporary_path, filepath)
         except Exception as e:
             logger.error(f'保存数据失败: {e}')
+            if os.path.exists(temporary_path):
+                try:
+                    os.remove(temporary_path)
+                except OSError:
+                    pass
 
     def _load_data(self):
-        """从本地JSON文件加载数据"""
+        """从本地JSON文件加载数据；失败时保留当前内存数据"""
         filepath = os.path.join(DATA_DIR, 'experiments.json')
         if os.path.exists(filepath):
             try:
                 with open(filepath, 'r', encoding='utf-8') as f:
-                    self.projects = json.load(f)
+                    payload = json.load(f)
+                if not isinstance(payload, dict):
+                    raise ValueError('试验数据根节点必须是 JSON 对象')
+                self.projects = payload
                 logger.info(f'已加载试验数据 ({len(self.projects)} 个项目)')
             except Exception as e:
-                logger.error(f'加载数据失败: {e}')
-                self.projects = {}
+                logger.error(f'加载数据失败，已保留当前内存数据: {e}')
+                if not isinstance(getattr(self, 'projects', None), dict):
+                    self.projects = {}
         else:
-            self.projects = {}
+            if not isinstance(getattr(self, 'projects', None), dict):
+                self.projects = {}
 
     def statusBar(self):
         parent = self.parent()

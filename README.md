@@ -138,6 +138,9 @@ cd tool-case
 # 安装依赖
 pip install -r requirements.txt
 
+# 开发/测试时安装
+pip install -r requirements-dev.txt
+
 # 启动程序
 python radar_tool/run.py
 ```
@@ -161,11 +164,11 @@ python-docx>=0.8.11
 ```
 tool-case/
 ├── README.md                     # 本文件
-├── requirements.txt              # Python 依赖
+├── requirements.txt              # 运行依赖
+├── requirements-dev.txt          # 开发与测试依赖
 ├── image/                        # 图标资源
 │   └── rose.ico
-├── 试验数据/                      # 试验记录数据目录（自动生成）
-└── radar_tool/                   # 主程序包
+├── radar_tool/                   # 主程序包
     ├── __init__.py
     ├── run.py                    # 程序入口
     ├── main_window.py            # 主窗口、模块页签与懒加载调度
@@ -191,6 +194,21 @@ tool-case/
     ├── ui_theme.py               # UI 主题与样式
     ├── alignment.py              # 对齐工具
     └── logger.py                 # 日志系统
+├── tests/                        # 自动化测试
+├── docs/
+│   └── 设计文档/                  # 模块设计与处理流程文档
+├── packaging/
+│   └── 雷达数据可视化工具.spec     # PyInstaller 打包配置
+├── artifacts/                    # 本地编译输出（已忽略）
+│   ├── bin/                      # 可执行文件及随附 image 资源
+│   ├── nuitka/                   # Nuitka 中间产物与分发目录
+│   ├── pyinstaller/              # PyInstaller 构建目录
+│   └── reports/                  # 编译报告
+├── tools/                        # 本地打包工具（已忽略）
+└── var/                          # 运行时数据（自动生成、已忽略）
+    ├── 日志/                      # 运行日志
+    ├── 测向校正/                  # 校正参数库
+    └── 试验数据/                  # 试验记录数据
 ```
 
 ---
@@ -231,13 +249,15 @@ CSV 使用“中文名称(english_identifier)”表头。UTC 相关字段包括 
 
 ### 打包部署 | Packaging
 
-程序兼容 PyInstaller 和 Nuitka 打包。打包后可执行文件与 `image/` 目录需放在同一路径下。
+程序兼容 PyInstaller 和 Nuitka 打包。打包配置位于 `packaging/`，历史编译输出统一存放在 `artifacts/`。打包后可执行文件与 `image/` 目录需放在同一路径下。
 
 为降低 Nuitka 打包后的启动等待时间，主窗口采用页签懒加载：启动时只创建首页，其他功能页在首次切换时再初始化。
 
 ```bash
 # 示例：使用 PyInstaller 打包
 pyinstaller --onefile --windowed --add-data "image;image" radar_tool/run.py
+# 或直接使用已整理的配置：
+pyinstaller packaging/雷达数据可视化工具.spec
 ```
 
 ---

@@ -1,17 +1,19 @@
 """
 日志模块 - Logging utility
 
-自动在项目根目录创建 `日志/` 目录，按日期生成日志文件。
+在运行时数据目录创建 `日志/`，按日期生成日志并自动轮转。
 提供统一的日志记录接口，支持文件和控制台输出。
 """
 
 import os
 import logging
 from datetime import datetime
-from .runtime_paths import get_user_data_dir
+from logging.handlers import RotatingFileHandler
+
+from .runtime_paths import get_user_data_dir, get_user_data_root
 
 # 日志目录
-LOG_DIR = get_user_data_dir('日志')
+LOG_DIR = os.path.join(get_user_data_root(), '日志')
 
 # 日志文件路径 (按日期)
 LOG_FILE = os.path.join(LOG_DIR, f"运行日志_{datetime.now().strftime('%Y%m%d')}.log")
@@ -26,11 +28,14 @@ _loggers = {}
 
 def _ensure_log_dir():
     """确保日志目录存在"""
-    if not os.path.isdir(LOG_DIR):
-        try:
-            os.makedirs(LOG_DIR, exist_ok=True)
-        except Exception as e:
-            print(f"[日志] 无法创建日志目录 '{LOG_DIR}': {e}")
+    global LOG_DIR, LOG_FILE
+    try:
+        LOG_DIR = get_user_data_dir('日志')
+        LOG_FILE = os.path.join(
+            LOG_DIR, f"运行日志_{datetime.now().strftime('%Y%m%d')}.log"
+        )
+    except Exception as e:
+        print(f"[日志] 无法创建日志目录 '{LOG_DIR}': {e}")
 
 
 def _setup_root_logger():
@@ -49,7 +54,12 @@ def _setup_root_logger():
 
     # ——— 文件 Handler (记录全部 DEBUG+) ———
     try:
-        fh = logging.FileHandler(LOG_FILE, encoding='utf-8')
+        fh = RotatingFileHandler(
+            LOG_FILE,
+            maxBytes=5 * 1024 * 1024,
+            backupCount=5,
+            encoding='utf-8',
+        )
         fh.setLevel(logging.DEBUG)
         fh.setFormatter(formatter)
         root_logger.addHandler(fh)

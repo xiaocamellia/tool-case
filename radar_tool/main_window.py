@@ -168,3 +168,41 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
         self.setStyleSheet(MAIN_STYLESHEET)
         self.statusBar().setStyleSheet(STATUSBAR_STYLE)
         logger.debug('主题样式已应用')
+
+    def _background_thread_objects(self):
+        candidates = [self]
+        candidates.extend(
+            panel for panel in self._tab_panels if panel is not None
+        )
+        running = []
+        for candidate in candidates:
+            for name, value in getattr(candidate, '__dict__', {}).items():
+                if not name.endswith('_thread'):
+                    continue
+                try:
+                    if value is not None and value.isRunning():
+                        running.append((name, value))
+                except RuntimeError:
+                    continue
+        return running
+
+    def _running_background_threads(self):
+        return [name for name, _thread in self._background_thread_objects()]
+
+    def closeEvent(self, event):
+        running = self._background_thread_objects()
+        if running:
+            for _name, thread in running:
+                try:
+                    thread.quit()
+                except (AttributeError, RuntimeError):
+                    pass
+            event.ignore()
+            QMessageBox.warning(
+                self,
+                '后台任务未结束',
+                '仍有后台计算任务正在运行，请等待任务完成后再关闭程序。\n'
+                f'当前任务：{", ".join(name for name, _thread in running)}',
+            )
+            return
+        super().closeEvent(event)
