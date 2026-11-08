@@ -6,6 +6,7 @@
 """
 
 import os
+import threading
 
 import numpy as np
 import pandas as pd
@@ -16,7 +17,7 @@ from PyQt5.QtWidgets import (
     QCheckBox, QTabWidget, QComboBox, QLineEdit,
     QMessageBox, QAbstractItemView,
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import QObject, Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont, QColor
 
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
@@ -27,9 +28,109 @@ from .plotting import MatplotlibCanvas
 from .ui_theme import (
     set_button_icon, style_primary_button, style_warning_button,
 )
+from .error_ui import handle_ui_exception
+from .errors import ExportError, safe_exception_message
 from .logger import get_logger
+from .background_tasks import (
+    ensure_task_can_start, register_background_task, task_result_is_current,
+)
 
 logger = get_logger('visualization_panel')
+
+
+def _load_dataset_payload(filepath):
+    col_file = DataLoader.auto_find_column_file(filepath)
+    if col_file and os.path.isfile(col_file):
+        col_names = DataLoader.load_column_names(col_file)
+    else:
+        col_names = None
+        col_file = ''
+    dataframe = DataLoader.load_data(
+        filepath, col_names, validate_limits=False
+    )
+    return {
+        'filepath': filepath,
+        'label': os.path.basename(filepath),
+        'col_file': col_file,
+        'dataframe': dataframe,
+    }
+
+
+class DatasetLoadWorker(QObject):
+    """Parse selected data files outside the Qt UI thread."""
+
+    succeeded = pyqtSignal(dict)
+    failed = pyqtSignal(object)
+    cancelled = pyqtSignal(str)
+    progress = pyqtSignal(int, str)
+
+    def __init__(self, filepaths):
+        super().__init__()
+        self.filepaths = list(filepaths)
+        self._cancel_event = threading.Event()
+
+    def cancel(self):
+        self._cancel_event.set()
+
+    def run(self):
+        results = []
+        try:
+            total = max(1, len(self.filepaths))
+            for index, filepath in enumerate(self.filepaths):
+                if self._cancel_event.is_set():
+                    raise RuntimeError('数据文件加载已取消')
+                self.progress.emit(
+                    int(index * 100 / total),
+                    f'正在加载 {os.path.basename(filepath)}',
+                )
+                results.append(_load_dataset_payload(filepath))
+            self.progress.emit(100, '数据文件加载完成')
+            self.succeeded.emit({'results': results})
+        except Exception as exc:
+            if self._cancel_event.is_set():
+                self.cancelled.emit('数据文件加载已取消')
+            else:
+                self.failed.emit(exc)
+
+
+class FigureExportWorker(QObject):
+    """Encode a prepared Matplotlib figure outside the Qt UI thread."""
+
+    succeeded = pyqtSignal(str)
+    failed = pyqtSignal(str)
+    cancelled = pyqtSignal(str)
+    progress = pyqtSignal(int, str)
+
+    def __init__(self, figure, filepath):
+        super().__init__()
+        self.figure = figure
+        self.filepath = filepath
+        self._cancel_event = threading.Event()
+
+    def cancel(self):
+        self._cancel_event.set()
+
+    def run(self):
+        try:
+            if self._cancel_event.is_set():
+                raise RuntimeError('高清图导出已取消')
+            self.progress.emit(10, '正在编码高清图')
+            self.figure.savefig(
+                self.filepath,
+                dpi=600,
+                bbox_inches='tight',
+                facecolor='white',
+                edgecolor='none',
+            )
+            if self._cancel_event.is_set():
+                raise RuntimeError('高清图导出已取消')
+            self.progress.emit(100, '高清图导出完成')
+            self.succeeded.emit(self.filepath)
+        except Exception as exc:
+            if self._cancel_event.is_set():
+                self.cancelled.emit('高清图导出已取消')
+            else:
+                self.failed.emit(safe_exception_message(exc))
 
 
 class VisualizationPanel(QWidget):
@@ -47,6 +148,14 @@ class VisualizationPanel(QWidget):
         self.col_names = []
         self.data_filepath = ''
         self.col_filepath = ''
+        self._dataset_load_thread = None
+        self._dataset_load_worker = None
+        self._export_thread = None
+        self._export_worker = None
+        self._load_task_name = ''
+        self._load_task_version = 0
+        self._export_task_name = ''
+        self._export_task_version = 0
 
         # ---- 绘图项管理 ----
         self.plot_items = []
@@ -482,26 +591,77 @@ class VisualizationPanel(QWidget):
         if not filepaths:
             logger.info('用户操作: 取消加载数据文件')
             return
+        if self._dataset_load_thread is not None:
+            self.main_window.status_label.setText('已有数据加载任务正在后台运行')
+            return
         logger.info(f'用户操作: 开始加载数据文件，共 {len(filepaths)} 个')
-        loaded_ids = []
-        for filepath in filepaths:
-            try:
-                dataset_id = self._load_single_dataset(filepath)
-                loaded_ids.append(dataset_id)
-                logger.info(f'  数据加载成功: {os.path.basename(filepath)} (id={dataset_id})')
-            except Exception as e:
-                logger.error(f'  数据加载失败: {os.path.basename(filepath)} — {e}')
-                QMessageBox.warning(self, '加载失败', f'{os.path.basename(filepath)}\n{e}')
+        task_name = f'数据文件加载（{len(filepaths)} 个）'
+        ensure_task_can_start(self, task_name)
+        self._load_task_name = task_name
+        self.btn_load.setEnabled(False)
+        thread = QThread(self)
+        worker = DatasetLoadWorker(filepaths)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.succeeded.connect(self._on_dataset_load_succeeded)
+        worker.failed.connect(self._on_dataset_load_failed)
+        worker.cancelled.connect(self._on_dataset_load_cancelled)
+        worker.succeeded.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        worker.cancelled.connect(thread.quit)
+        worker.succeeded.connect(worker.deleteLater)
+        worker.failed.connect(worker.deleteLater)
+        worker.cancelled.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._on_dataset_load_thread_finished)
+        self._dataset_load_thread = thread
+        self._dataset_load_worker = worker
+        self._load_task_version = register_background_task(
+            self,
+            task_name,
+            thread,
+            worker,
+            worker.cancel,
+        )
+        thread.start()
 
-        if loaded_ids and self.active_dataset_id is None:
+    def _on_dataset_load_succeeded(self, payload):
+        if not task_result_is_current(
+            self, self._load_task_name, self._load_task_version
+        ):
+            return
+        loaded_ids = [
+            self._register_loaded_dataset(item, refresh=False)
+            for item in payload['results']
+        ]
+        if self.active_dataset_id is None and loaded_ids:
             self.set_active_dataset(loaded_ids[0])
         elif loaded_ids:
             self._refresh_dataset_list()
-
         if loaded_ids:
             msg = f'已加载 {len(loaded_ids)} 个数据集'
             logger.info(f'加载完成: {msg}')
             self.main_window.status_label.setText(msg)
+
+    def _on_dataset_load_failed(self, exc):
+        if not task_result_is_current(
+            self, self._load_task_name, self._load_task_version
+        ):
+            return
+        handle_ui_exception(self, logger, '加载数据文件', exc)
+
+    def _on_dataset_load_cancelled(self, message):
+        if not task_result_is_current(
+            self, self._load_task_name, self._load_task_version
+        ):
+            return
+        logger.info(message)
+        self.main_window.status_label.setText(message)
+
+    def _on_dataset_load_thread_finished(self):
+        self._dataset_load_worker = None
+        self._dataset_load_thread = None
+        self.btn_load.setEnabled(True)
 
 
     def load_column_file(self):
@@ -515,8 +675,8 @@ class VisualizationPanel(QWidget):
             col_names = DataLoader.load_column_names(filepath)
             logger.info(f'用户操作: 加载列名文件 — {os.path.basename(filepath)} ({len(col_names)} 列)')
         except Exception as e:
-            logger.error(f'列名文件加载失败: {filepath} — {e}')
-            QMessageBox.warning(self, '错误', str(e))
+            logger.error(f'列名文件加载失败: {filepath} — {safe_exception_message(e)}')
+            handle_ui_exception(self, logger, '加载列名文件', e)
             return
 
         active = self._get_active_dataset()
@@ -526,44 +686,48 @@ class VisualizationPanel(QWidget):
             return
 
         try:
+            renamed = active.original_df.copy(deep=False)
+            renamed.columns = DataLoader.normalize_column_names(
+                col_names, renamed.shape[1]
+            )
             active.col_filepath = filepath
             old_start, old_end = active.get_slice_bounds()
-            active.df = DataLoader.load_data(active.data_filepath, col_names)
-            active.original_df = active.df.copy()
+            active.df = renamed
+            active.original_df = renamed
             active.set_range(old_start, old_end)
             self.set_active_dataset(active.dataset_id)
             logger.info(f'列名已应用到数据集: {active.label} → shape={active.df.shape}')
             self.main_window.status_label.setText(f'已为当前数据集加载列名文件: {os.path.basename(filepath)}')
         except Exception as e:
-            logger.error(f'应用列名失败: {e}')
-            QMessageBox.warning(self, '错误', str(e))
+            logger.error(f'应用列名失败: {safe_exception_message(e)}')
+            handle_ui_exception(self, logger, '应用列名文件', e)
 
 
     def _load_single_dataset(self, filepath):
-        col_file = DataLoader.auto_find_column_file(filepath)
-        if col_file and os.path.isfile(col_file):
-            col_names = DataLoader.load_column_names(col_file)
-        else:
-            col_names = None
-            col_file = ''
+        return self._register_loaded_dataset(_load_dataset_payload(filepath))
 
-        df = DataLoader.load_data(filepath, col_names)
+    def _register_loaded_dataset(self, payload, refresh=True):
+        df = payload['dataframe']
         dataset_id = self._dataset_counter
         self._dataset_counter += 1
 
         record = DatasetRecord(
             dataset_id=dataset_id,
-            label=os.path.basename(filepath),
-            data_filepath=filepath,
-            col_filepath=col_file,
-            df=df.copy(),
-            original_df=df.copy(),
+            label=payload['label'],
+            data_filepath=payload['filepath'],
+            col_filepath=payload['col_file'],
+            df=df,
+            original_df=df,
             start=0,
             end=len(df),
         )
         self.datasets[dataset_id] = record
-        self._refresh_dataset_list()
-        logger.debug(f'数据集已注册: id={dataset_id}, file={os.path.basename(filepath)}, shape={df.shape}')
+        if refresh:
+            self._refresh_dataset_list()
+        logger.debug(
+            f'数据集已注册: id={dataset_id}, '
+            f'file={payload["label"]}, shape={df.shape}'
+        )
         return dataset_id
 
 
@@ -668,15 +832,17 @@ class VisualizationPanel(QWidget):
                 col_names = DataLoader.load_column_names(dataset.col_filepath)
             else:
                 col_names = None
-            dataset.df = DataLoader.load_data(dataset.data_filepath, col_names)
-            dataset.original_df = dataset.df.copy()
+            dataset.df = DataLoader.load_data(
+                dataset.data_filepath, col_names, validate_limits=False
+            )
+            dataset.original_df = dataset.df
             dataset.set_range(old_start, old_end)
             self.set_active_dataset(dataset.dataset_id)
             logger.info(f'重载成功: {dataset.label}, shape={dataset.df.shape}')
             self.main_window.status_label.setText(f'已重载: {dataset.label}')
         except Exception as e:
-            logger.error(f'重载失败: {e}')
-            QMessageBox.warning(self, '重载失败', str(e))
+            logger.error(f'重载失败: {safe_exception_message(e)}')
+            handle_ui_exception(self, logger, '重载数据', e)
 
 
     def remove_active_dataset(self):
@@ -785,8 +951,8 @@ class VisualizationPanel(QWidget):
                 logger.info(f'用户操作: 数据过滤 — {dataset.label}, 列"{col_name}" 范围[{min_str or "不限"}, {max_str or "不限"}] 移除{n_removed}行, 保留{len(filtered_df)}行')
                 self.main_window.status_label.setText(f'过滤完成: {dataset.label} 移除 {n_removed} 行, 保留 {len(filtered_df)} 行')
         except Exception as e:
-            logger.error(f'过滤失败: {e}')
-            QMessageBox.warning(self, '过滤错误', str(e))
+            logger.error(f'过滤失败: {safe_exception_message(e)}')
+            handle_ui_exception(self, logger, '过滤数据', e)
 
 
     def clear_filter(self):
@@ -797,19 +963,14 @@ class VisualizationPanel(QWidget):
         self.edit_filter_max.clear()
         try:
             old_start, old_end = dataset.get_slice_bounds()
-            if dataset.col_filepath and os.path.isfile(dataset.col_filepath):
-                col_names = DataLoader.load_column_names(dataset.col_filepath)
-            else:
-                col_names = None
-            dataset.df = DataLoader.load_data(dataset.data_filepath, col_names)
-            dataset.original_df = dataset.df.copy()
+            dataset.df = dataset.original_df
             dataset.set_range(old_start, old_end)
             self.set_active_dataset(dataset.dataset_id)
             logger.info(f'用户操作: 清除过滤 — {dataset.label}')
             self.main_window.status_label.setText(f'已清除过滤: {dataset.label}')
         except Exception as e:
-            logger.error(f'清除过滤失败: {e}')
-            QMessageBox.critical(self, '错误', str(e))
+            logger.error(f'清除过滤失败: {safe_exception_message(e)}')
+            handle_ui_exception(self, logger, '清除过滤', e)
 
 
     def save_range_preset(self):
@@ -841,11 +1002,15 @@ class VisualizationPanel(QWidget):
 
     def select_all_columns(self):
         for i in range(self.list_columns.count()):
-            self.list_columns.item(i).setSelected(True)
+            item = self.list_columns.item(i)
+            item.setCheckState(Qt.Checked)
+            item.setSelected(True)
         logger.debug(f'用户操作: 全选列 ({self.list_columns.count()} 个)')
 
 
     def deselect_all_columns(self):
+        for i in range(self.list_columns.count()):
+            self.list_columns.item(i).setCheckState(Qt.Unchecked)
         self.list_columns.clearSelection()
         logger.debug('用户操作: 取消全选列')
 
@@ -856,8 +1021,17 @@ class VisualizationPanel(QWidget):
             QMessageBox.information(self, '提示', '请先加载并选择一个数据集')
             return
 
+        checked_items = [
+            self.list_columns.item(i)
+            for i in range(self.list_columns.count())
+            if self.list_columns.item(i).checkState() == Qt.Checked
+        ]
         selected_items = self.list_columns.selectedItems()
-        if not selected_items:
+        candidate_items = list(checked_items)
+        candidate_items.extend(
+            item for item in selected_items if item not in checked_items
+        )
+        if not candidate_items:
             QMessageBox.information(self, '提示', '请先选择要绘制的参数列')
             return
 
@@ -870,7 +1044,7 @@ class VisualizationPanel(QWidget):
         added = 0
         col_names_added = []
 
-        for item in selected_items:
+        for item in candidate_items:
             col_name = item.text()
             exists = any(
                 pi.col_name == col_name and
@@ -1071,13 +1245,88 @@ class VisualizationPanel(QWidget):
             else:
                 filepath += '.png'
 
-        self._do_plot(current_view.canvas.axes, current_view)
-        current_view.canvas.figure.savefig(
-            filepath, dpi=600, bbox_inches='tight',
-            facecolor='white', edgecolor='none'
+        if self._export_thread is not None:
+            self.main_window.status_label.setText('已有图片导出任务正在后台运行')
+            return
+        export_task_name = f'高清图导出：{os.path.basename(filepath)}'
+        ensure_task_can_start(self, export_task_name)
+        self._export_task_name = export_task_name
+        try:
+            self._do_plot(current_view.canvas.axes, current_view)
+        except (OSError, ValueError, TypeError) as exc:
+            handle_ui_exception(
+                self,
+                logger,
+                '导出图片',
+                ExportError('图片导出失败，请检查目录权限和磁盘空间'),
+            )
+            return
+        except Exception as exc:
+            handle_ui_exception(self, logger, '导出图片', exc)
+            return
+
+        thread = QThread(self)
+        worker = FigureExportWorker(current_view.canvas.figure, filepath)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.succeeded.connect(self._on_plot_export_succeeded)
+        worker.failed.connect(self._on_plot_export_failed)
+        worker.cancelled.connect(self._on_plot_export_cancelled)
+        worker.succeeded.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        worker.cancelled.connect(thread.quit)
+        worker.succeeded.connect(worker.deleteLater)
+        worker.failed.connect(worker.deleteLater)
+        worker.cancelled.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._on_plot_export_thread_finished)
+        self._export_thread = thread
+        self._export_worker = worker
+        self.btn_export.setEnabled(False)
+        self._export_task_version = register_background_task(
+            self,
+            export_task_name,
+            thread,
+            worker,
+            worker.cancel,
         )
-        logger.info(f'用户操作: 导出图片 — {filepath} (格式: {os.path.splitext(filepath)[1]})')
-        self.main_window.status_label.setText(f'已导出高清图: {os.path.basename(filepath)}')
+        thread.start()
+
+    def _on_plot_export_succeeded(self, filepath):
+        if not task_result_is_current(
+            self, self._export_task_name, self._export_task_version
+        ):
+            return
+        logger.info(
+            '用户操作: 导出图片 — %s (格式: %s)',
+            os.path.basename(filepath),
+            os.path.splitext(filepath)[1],
+        )
+        self.main_window.status_label.setText(
+            f'已导出高清图: {os.path.basename(filepath)}'
+        )
+
+    def _on_plot_export_failed(self, message):
+        if not task_result_is_current(
+            self, self._export_task_name, self._export_task_version
+        ):
+            return
+        handle_ui_exception(
+            self, logger, '导出图片', ExportError(message)
+        )
+
+    def _on_plot_export_cancelled(self, message):
+        if not task_result_is_current(
+            self, self._export_task_name, self._export_task_version
+        ):
+            return
+        logger.info(message)
+        self.main_window.status_label.setText(message)
+
+    def _on_plot_export_thread_finished(self):
+        self._export_worker = None
+        self._export_thread = None
+        self.btn_export.setEnabled(True)
 
 
     def reset_view(self):

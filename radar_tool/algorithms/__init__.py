@@ -1,6 +1,9 @@
 """Signal processing algorithms package."""
+
 from .doa_estimation import (
     C,
+    SPEED_OF_LIGHT_M_PER_S,
+    DoaValidationError,
     compute_array_manifold_2d,
     generate_received_signal,
     bartlett_doa_1d,
@@ -19,6 +22,8 @@ from .array_geometry import (
 
 __all__ = [
     "C",
+    "SPEED_OF_LIGHT_M_PER_S",
+    "DoaValidationError",
     "compute_array_manifold_2d",
     "generate_received_signal",
     "bartlett_doa_1d",

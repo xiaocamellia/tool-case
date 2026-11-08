@@ -6,8 +6,19 @@ import math
 import os
 import struct
 import tempfile
+import threading
+import time
 from dataclasses import dataclass
-from typing import Iterable, List, Sequence, Tuple
+from typing import Iterable, List, Optional, Sequence, Tuple
+
+from .errors import ExportError, ValidationError
+from .input_limits import (
+    InputResourceError,
+    MAX_BIN_FRAMES,
+    MAX_FILE_SIZE,
+    ensure_file_size,
+    validate_sample_count,
+)
 
 
 FRAME_SIZE = 270
@@ -17,11 +28,35 @@ TX_FLAG = 0x55
 RX_FLAG = 0xAA
 INITIAL_TEMPERATURE = 0x80
 CHANNELS_PER_BLOCK = 64
-MAX_BLOCKS = 24
+MAX_BLOCKS = MAX_BIN_FRAMES
 
 
-class FormatConversionError(ValueError):
+class FormatConversionError(ValidationError):
     """Raised when source data does not match the selected wire format."""
+
+
+class FormatConversionCancelled(FormatConversionError):
+    """Raised when a user cancels an active conversion parse."""
+
+
+class FormatConversionTimeout(FormatConversionError):
+    """Raised when a conversion parse exceeds its allowed duration."""
+
+
+def _check_parse_control(
+    cancel_event: Optional[threading.Event],
+    deadline: Optional[float],
+    timeout_seconds: Optional[float] = None,
+) -> None:
+    if deadline is not None and time.monotonic() >= deadline:
+        allowed = (
+            f'允许 0~{timeout_seconds:g} 秒'
+            if timeout_seconds is not None
+            else '已超过允许的解析时限'
+        )
+        raise FormatConversionTimeout(f'解析超时：{allowed}')
+    if cancel_event is not None and cancel_event.is_set():
+        raise FormatConversionCancelled('解析已取消')
 
 
 @dataclass(frozen=True)
@@ -69,12 +104,18 @@ def _parse_number(token: str, line_number: int, column_name: str) -> float:
     return value
 
 
-def parse_tr_amplitude_phase_text(text: str) -> Tuple[Tuple[int, float, float], ...]:
+def parse_tr_amplitude_phase_text(
+    text: str,
+    cancel_event: Optional[threading.Event] = None,
+    deadline: Optional[float] = None,
+    timeout_seconds: Optional[float] = None,
+) -> Tuple[Tuple[int, float, float], ...]:
     """Parse channel/amplitude/phase rows and enforce 64-channel blocks."""
 
     parsed: List[Tuple[int, float, float]] = []
     source_lines: List[int] = []
     for line_number, raw_line in enumerate(text.splitlines(), 1):
+        _check_parse_control(cancel_event, deadline, timeout_seconds)
         line = raw_line.strip()
         if not line:
             continue
@@ -93,6 +134,10 @@ def parse_tr_amplitude_phase_text(text: str) -> Tuple[Tuple[int, float, float], 
 
     if not parsed:
         raise FormatConversionError('输入文件没有有效数据行')
+    try:
+        validate_sample_count(len(parsed))
+    except InputResourceError as exc:
+        raise FormatConversionError(str(exc)) from exc
     if len(parsed) % CHANNELS_PER_BLOCK:
         raise FormatConversionError(
             f'有效数据共 {len(parsed)} 行，不是 {CHANNELS_PER_BLOCK} 的整数倍，存在通道缺失'
@@ -117,13 +162,24 @@ def parse_tr_amplitude_phase_text(text: str) -> Tuple[Tuple[int, float, float], 
     return tuple(parsed)
 
 
-def load_tr_amplitude_phase_txt(filepath: str) -> Tuple[Tuple[int, float, float], ...]:
+def load_tr_amplitude_phase_txt(
+    filepath: str,
+    cancel_event: Optional[threading.Event] = None,
+    deadline: Optional[float] = None,
+    timeout_seconds: Optional[float] = None,
+) -> Tuple[Tuple[int, float, float], ...]:
     try:
+        ensure_file_size(filepath, MAX_FILE_SIZE, label='幅相文本文件')
+        _check_parse_control(cancel_event, deadline, timeout_seconds)
         with open(filepath, 'rb') as source:
             raw = source.read()
+    except InputResourceError as exc:
+        raise FormatConversionError(str(exc)) from exc
     except OSError as exc:
-        raise FormatConversionError(f'无法读取输入文件：{exc}') from exc
-    return parse_tr_amplitude_phase_text(_decode_text(raw))
+        raise FormatConversionError('无法读取输入文件（系统读取失败）') from exc
+    _check_parse_control(cancel_event, deadline, timeout_seconds)
+    return parse_tr_amplitude_phase_text(
+        _decode_text(raw), cancel_event, deadline, timeout_seconds)
 
 
 def _frame_parameters(block_index: int) -> Tuple[int, int, str, str]:
@@ -201,13 +257,26 @@ def encode_tr_amplitude_phase(
     return TrConversionResult(normalized_rows, bytes(output), tuple(summaries))
 
 
-def build_tr_amplitude_phase_bin(filepath: str) -> TrConversionResult:
-    return encode_tr_amplitude_phase(load_tr_amplitude_phase_txt(filepath))
+def build_tr_amplitude_phase_bin(
+    filepath: str,
+    cancel_event: Optional[threading.Event] = None,
+    deadline: Optional[float] = None,
+    timeout_seconds: Optional[float] = None,
+) -> TrConversionResult:
+    rows = load_tr_amplitude_phase_txt(
+        filepath, cancel_event, deadline, timeout_seconds)
+    return encode_tr_amplitude_phase(rows)
 
 
-def decode_tr_amplitude_phase(data: bytes) -> TrConversionResult:
+def decode_tr_amplitude_phase(
+    data: bytes,
+    cancel_event: Optional[threading.Event] = None,
+    deadline: Optional[float] = None,
+    timeout_seconds: Optional[float] = None,
+) -> TrConversionResult:
     """Strictly validate and decode one merged TR amplitude/phase BIN stream."""
 
+    _check_parse_control(cancel_event, deadline, timeout_seconds)
     if not data:
         raise FormatConversionError('BIN 文件为空')
     if len(data) % FRAME_SIZE:
@@ -223,6 +292,7 @@ def decode_tr_amplitude_phase(data: bytes) -> TrConversionResult:
     rows: List[Tuple[int, float, float]] = []
     summaries: List[FrameSummary] = []
     for block_index in range(block_count):
+        _check_parse_control(cancel_event, deadline, timeout_seconds)
         frame = data[block_index * FRAME_SIZE:(block_index + 1) * FRAME_SIZE]
         frame_number = block_index + 1
         expected_flag, expected_temp, mode, description = _frame_parameters(block_index)
@@ -253,6 +323,7 @@ def decode_tr_amplitude_phase(data: bytes) -> TrConversionResult:
 
         offset = 6
         for channel in range(1, CHANNELS_PER_BLOCK + 1):
+            _check_parse_control(cancel_event, deadline, timeout_seconds)
             amplitude_raw, phase_raw = struct.unpack('>hh', frame[offset:offset + 4])
             rows.append((channel, amplitude_raw * 0.1, phase_raw * 0.1))
             offset += 4
@@ -266,13 +337,29 @@ def decode_tr_amplitude_phase(data: bytes) -> TrConversionResult:
     return TrConversionResult(tuple(rows), bytes(data), tuple(summaries))
 
 
-def load_tr_amplitude_phase_bin(filepath: str) -> TrConversionResult:
+def load_tr_amplitude_phase_bin(
+    filepath: str,
+    cancel_event: Optional[threading.Event] = None,
+    deadline: Optional[float] = None,
+    timeout_seconds: Optional[float] = None,
+) -> TrConversionResult:
     try:
+        ensure_file_size(filepath, MAX_FILE_SIZE, label='BIN 文件')
+        ensure_file_size(
+            filepath,
+            MAX_BIN_FRAMES * FRAME_SIZE,
+            label='BIN 文件',
+        )
+        _check_parse_control(cancel_event, deadline, timeout_seconds)
         with open(filepath, 'rb') as source:
             data = source.read()
+    except InputResourceError as exc:
+        raise FormatConversionError(str(exc)) from exc
     except OSError as exc:
-        raise FormatConversionError(f'无法读取 BIN 文件：{exc}') from exc
-    return decode_tr_amplitude_phase(data)
+        raise FormatConversionError('无法读取 BIN 文件（系统读取失败）') from exc
+    _check_parse_control(cancel_event, deadline, timeout_seconds)
+    return decode_tr_amplitude_phase(
+        data, cancel_event, deadline, timeout_seconds)
 
 
 def rows_to_tr_text(rows: Iterable[Tuple[int, float, float]]) -> str:
@@ -297,7 +384,7 @@ def write_bytes_atomic(filepath: str, data: bytes) -> None:
                 os.unlink(temporary_path)
             except OSError:
                 pass
-        raise FormatConversionError(f'无法写入输出文件：{exc}') from exc
+        raise ExportError('无法写入输出文件，请检查目录权限和磁盘空间') from exc
 
 
 def write_text_atomic(filepath: str, text: str) -> None:

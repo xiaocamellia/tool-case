@@ -12,8 +12,10 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt
 
+from .background_tasks import TaskRegistry
 from .compare_analysis import CompareAnalysisMixin
 from .ui_theme import MAIN_STYLESHEET, STATUSBAR_STYLE
+from .error_ui import handle_ui_exception
 from .logger import get_logger
 
 logger = get_logger('main_window')
@@ -24,6 +26,17 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
 
     def __init__(self):
         super().__init__()
+        self.task_registry = TaskRegistry(self)
+        for signal in (
+            self.task_registry.task_started,
+            self.task_registry.task_progress,
+            self.task_registry.task_succeeded,
+            self.task_registry.task_failed,
+            self.task_registry.task_cancel_requested,
+            self.task_registry.task_cancelled,
+            self.task_registry.task_completed,
+        ):
+            signal.connect(self._on_background_task_event)
         self.setWindowTitle('便携化工具箱V1.0.0')
         self.setGeometry(100, 100, 1400, 900)
 
@@ -100,11 +113,11 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
         try:
             panel = self._tab_factories[index]()
         except Exception as exc:
-            logger.exception(f'延迟加载失败: {self._tab_names[index]}')
-            QMessageBox.critical(
+            handle_ui_exception(
                 self,
-                '页面加载失败',
-                f'{self._tab_names[index]} 加载失败：\n{exc}\n\n详细错误已写入日志。'
+                logger,
+                f'{self._tab_names[index]} 页面加载',
+                exc,
             )
             return None
         self._tab_loaded[index] = True
@@ -169,40 +182,50 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
         self.statusBar().setStyleSheet(STATUSBAR_STYLE)
         logger.debug('主题样式已应用')
 
-    def _background_thread_objects(self):
-        candidates = [self]
-        candidates.extend(
-            panel for panel in self._tab_panels if panel is not None
-        )
-        running = []
-        for candidate in candidates:
-            for name, value in getattr(candidate, '__dict__', {}).items():
-                if not name.endswith('_thread'):
-                    continue
-                try:
-                    if value is not None and value.isRunning():
-                        running.append((name, value))
-                except RuntimeError:
-                    continue
-        return running
+    def _on_background_task_event(self, snapshot):
+        if hasattr(self, 'status_label'):
+            self.status_label.setText(
+                f'后台任务：{TaskRegistry.describe(snapshot)}'
+            )
 
     def _running_background_threads(self):
-        return [name for name, _thread in self._background_thread_objects()]
+        return [
+            snapshot.name
+            for snapshot in self.task_registry.active_snapshots(self)
+        ]
 
     def closeEvent(self, event):
-        running = self._background_thread_objects()
-        if running:
-            for _name, thread in running:
-                try:
-                    thread.quit()
-                except (AttributeError, RuntimeError):
-                    pass
-            event.ignore()
-            QMessageBox.warning(
-                self,
-                '后台任务未结束',
-                '仍有后台计算任务正在运行，请等待任务完成后再关闭程序。\n'
-                f'当前任务：{", ".join(name for name, _thread in running)}',
-            )
+        active = self.task_registry.active_snapshots(self)
+        if not active:
+            super().closeEvent(event)
             return
-        super().closeEvent(event)
+
+        event.ignore()
+        requested = self.task_registry.cancel_active(self)
+        requested_ids = {snapshot.task_id for snapshot in requested}
+        finished = self.task_registry.wait_for_tasks(
+            self, timeout_ms=3000
+        )
+        snapshots = self.task_registry.active_snapshots(self)
+        snapshots.extend(
+            snapshot for snapshot in self.task_registry.snapshots(self)
+            if snapshot.task_id in requested_ids
+            and snapshot.completed
+        )
+        details = '\n'.join(
+            TaskRegistry.describe(snapshot) for snapshot in snapshots
+        )
+        if finished:
+            QMessageBox.information(
+                self,
+                '后台任务已取消',
+                '关闭前已执行有界等待，所有后台任务均已结束。\n' + details,
+            )
+            event.accept()
+            return
+        QMessageBox.warning(
+            self,
+            '后台任务取消超时',
+            '已发送取消请求，但以下任务在 3 秒内仍未结束，请稍后重试关闭：\n'
+            + details,
+        )

@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 import csv
+import json
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
 
+from radar_tool import calibration_batch_store
 from radar_tool.calibration_batch_store import (
     DEFAULT_FIXED_PARAMS,
     DEFAULT_INIT_PARAMS,
     CalibrationBatchStore,
+    create_default_profile,
 )
 from radar_tool.calibration_data_loader import load_calibration_data
 from radar_tool.calibration_model import simulate_angles
@@ -118,6 +122,160 @@ class CalibrationBatchStoreTests(unittest.TestCase):
             self.assertEqual(saved['notes'], '首次装调')
             self.assertTrue(reloaded.delete_profile(updated['id']))
             self.assertIsNone(reloaded.get_profile(updated['id']))
+
+    def test_corrupt_file_is_quarantined_and_recoverable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            filepath = os.path.join(directory, 'batch_configs.json')
+            with open(filepath, 'w', encoding='utf-8') as handle:
+                handle.write('{broken json')
+
+            store = CalibrationBatchStore(filepath)
+
+            corrupt_files = [
+                name for name in os.listdir(directory)
+                if name.startswith('batch_configs.json.corrupt-')
+            ]
+            self.assertEqual(len(corrupt_files), 1)
+            corrupt_path = os.path.join(directory, corrupt_files[0])
+            with open(corrupt_path, encoding='utf-8') as handle:
+                self.assertEqual(handle.read(), '{broken json')
+            self.assertTrue(os.path.isfile(filepath))
+            self.assertEqual(len(store.list_profiles()), 1)
+
+    def test_single_invalid_profile_is_skipped_and_valid_profile_loads(self):
+        with tempfile.TemporaryDirectory() as directory:
+            filepath = os.path.join(directory, 'batch_configs.json')
+            valid = create_default_profile('合法配置')
+            valid['id'] = 'valid-id'
+            invalid = create_default_profile('非法配置')
+            invalid['id'] = 'invalid-id'
+            invalid['fixed_params']['matrixZT2ANT'][0][0] = float('nan')
+            payload = {
+                'version': CalibrationBatchStore.VERSION,
+                'profiles': [valid, invalid],
+            }
+            with open(filepath, 'w', encoding='utf-8') as handle:
+                json.dump(payload, handle, ensure_ascii=False)
+
+            with self.assertLogs(
+                'radar_tool.calibration_batch_store', level='WARNING'
+            ):
+                store = CalibrationBatchStore(filepath)
+
+            profiles = store.list_profiles()
+            self.assertEqual([item['name'] for item in profiles], ['合法配置'])
+            self.assertTrue(os.path.exists(filepath))
+
+    def test_duplicate_profile_ids_are_skipped(self):
+        with tempfile.TemporaryDirectory() as directory:
+            filepath = os.path.join(directory, 'batch_configs.json')
+            first = create_default_profile('第一项')
+            second = create_default_profile('第二项')
+            first['id'] = second['id'] = 'duplicate-id'
+            payload = {
+                'version': CalibrationBatchStore.VERSION,
+                'profiles': [first, second],
+            }
+            with open(filepath, 'w', encoding='utf-8') as handle:
+                json.dump(payload, handle, ensure_ascii=False)
+
+            with self.assertLogs(
+                'radar_tool.calibration_batch_store', level='WARNING'
+            ):
+                store = CalibrationBatchStore(filepath)
+
+            self.assertEqual(len(store.list_profiles()), 1)
+            self.assertEqual(store.list_profiles()[0]['name'], '第一项')
+
+    def test_profile_validation_rejects_nonfinite_and_unknown_parameters(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = CalibrationBatchStore(
+                os.path.join(directory, 'batch_configs.json')
+            )
+            base = create_default_profile('待校验')
+            for field, value in (
+                ('name', 123),
+                ('fixed_params', []),
+                ('init_params', None),
+            ):
+                invalid = dict(base)
+                invalid[field] = value
+                with self.assertRaises(ValueError):
+                    store.save_profile(invalid)
+
+            invalid_matrix = dict(base)
+            invalid_matrix['fixed_params'] = {
+                'matrixZT2ANT': [
+                    [float('nan'), 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                ]
+            }
+            with self.assertRaises(ValueError):
+                store.save_profile(invalid_matrix)
+
+            unknown = dict(base)
+            unknown['fixed_params'] = {'unknown_param': 1.0}
+            with self.assertRaises(ValueError):
+                store.save_profile(unknown)
+
+    def test_successful_save_keeps_previous_valid_backup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            filepath = os.path.join(directory, 'batch_configs.json')
+            store = CalibrationBatchStore(filepath)
+            first = store.list_profiles()[0]
+            first['name'] = '第一次保存'
+            store.save_profile(first, first['id'])
+            self.assertTrue(os.path.exists(filepath + '.bak'))
+
+            second = dict(first)
+            second['name'] = '第二次保存'
+            store.save_profile(second, first['id'])
+
+            with open(filepath, encoding='utf-8') as handle:
+                current = json.load(handle)
+            with open(filepath + '.bak', encoding='utf-8') as handle:
+                backup = json.load(handle)
+            self.assertEqual(current['profiles'][0]['name'], '第二次保存')
+            self.assertEqual(backup['profiles'][0]['name'], '第一次保存')
+
+    def test_json_size_and_depth_limits_quarantine_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            filepath = os.path.join(directory, 'batch_configs.json')
+            with open(filepath, 'w', encoding='utf-8') as handle:
+                handle.write('{"version": 1, "profiles": []}')
+            with patch.object(
+                calibration_batch_store, 'MAX_JSON_FILE_SIZE', 10
+            ):
+                CalibrationBatchStore(filepath)
+            self.assertTrue(os.path.isfile(filepath))
+            self.assertTrue(any(
+                name.startswith('batch_configs.json.corrupt-')
+                for name in os.listdir(directory)
+            ))
+
+        with tempfile.TemporaryDirectory() as directory:
+            filepath = os.path.join(directory, 'batch_configs.json')
+            nested = {
+                'version': 1,
+                'profiles': [
+                    {
+                        'name': '深度',
+                        'fixed_params': {'nested': {'a': {'b': {'c': 1}}}},
+                    }
+                ],
+            }
+            with open(filepath, 'w', encoding='utf-8') as handle:
+                json.dump(nested, handle)
+            with patch.object(
+                calibration_batch_store, 'MAX_JSON_NESTING_DEPTH', 3
+            ):
+                CalibrationBatchStore(filepath)
+            self.assertTrue(os.path.isfile(filepath))
+            self.assertTrue(any(
+                name.startswith('batch_configs.json.corrupt-')
+                for name in os.listdir(directory)
+            ))
 
     def test_duplicate_profile_names_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -4,6 +4,8 @@
 """
 
 import math
+import warnings
+
 import numpy as np
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox,
@@ -24,11 +26,31 @@ from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 
 from .ui_theme import set_button_icon, style_primary_button, style_warning_button
+from .error_ui import handle_ui_exception
+from .errors import safe_exception_message
 from .logger import get_logger
 
 logger = get_logger('array_designer')
 
 C = 3e8
+
+
+def _validate_elements(elements):
+    """Validate array element coordinates, amplitudes, and phases."""
+
+    if len(elements) < 2:
+        raise ValueError('自定义阵列至少需要 2 个有效阵元')
+    for index, element in enumerate(elements, 1):
+        for field in ('x', 'y', 'amp', 'phase'):
+            try:
+                value = float(element.get(field))
+            except (AttributeError, TypeError, ValueError) as exc:
+                raise ValueError(f'阵元 {index} 的{field}必须是有限数值') from exc
+            if not math.isfinite(value):
+                raise ValueError(f'阵元 {index} 的{field}必须是有限数值')
+        if abs(float(element.get('amp'))) == 0:
+            raise ValueError(f'阵元 {index} 的幅度不能为零')
+    return elements
 
 
 class ArrayDesignerPanel(QWidget):
@@ -85,6 +107,58 @@ class ArrayDesignerPanel(QWidget):
         self.spin_d.setSingleStep(0.1)
         self.spin_d.valueChanged.connect(self._on_param_change)
         ctrl_layout.addWidget(self.spin_d)
+
+        self.uca_radius_label = QLabel('UCA半径(λ):')
+        self.spin_radius = QDoubleSpinBox()
+        self.spin_radius.setRange(0.1, 100.0)
+        self.spin_radius.setValue(2.0)
+        self.spin_radius.setSingleStep(0.1)
+        self.spin_radius.valueChanged.connect(self._on_param_change)
+        ctrl_layout.addWidget(self.uca_radius_label)
+        ctrl_layout.addWidget(self.spin_radius)
+
+        self.rect_rows_label = QLabel('行数:')
+        self.spin_rows = QSpinBox()
+        self.spin_rows.setRange(1, 128)
+        self.spin_rows.setValue(2)
+        self.spin_rows.valueChanged.connect(self._on_param_change)
+        ctrl_layout.addWidget(self.rect_rows_label)
+        ctrl_layout.addWidget(self.spin_rows)
+
+        self.rect_cols_label = QLabel('列数:')
+        self.spin_cols = QSpinBox()
+        self.spin_cols.setRange(1, 128)
+        self.spin_cols.setValue(4)
+        self.spin_cols.valueChanged.connect(self._on_param_change)
+        ctrl_layout.addWidget(self.rect_cols_label)
+        ctrl_layout.addWidget(self.spin_cols)
+
+        self.rect_dx_label = QLabel('X间距(λ):')
+        self.spin_dx = QDoubleSpinBox()
+        self.spin_dx.setRange(0.1, 5.0)
+        self.spin_dx.setValue(0.5)
+        self.spin_dx.setSingleStep(0.1)
+        self.spin_dx.valueChanged.connect(self._on_param_change)
+        ctrl_layout.addWidget(self.rect_dx_label)
+        ctrl_layout.addWidget(self.spin_dx)
+
+        self.rect_dy_label = QLabel('Y间距(λ):')
+        self.spin_dy = QDoubleSpinBox()
+        self.spin_dy.setRange(0.1, 5.0)
+        self.spin_dy.setValue(0.5)
+        self.spin_dy.setSingleStep(0.1)
+        self.spin_dy.valueChanged.connect(self._on_param_change)
+        ctrl_layout.addWidget(self.rect_dy_label)
+        ctrl_layout.addWidget(self.spin_dy)
+
+        for widget in (
+            self.uca_radius_label, self.spin_radius,
+            self.rect_rows_label, self.spin_rows,
+            self.rect_cols_label, self.spin_cols,
+            self.rect_dx_label, self.spin_dx,
+            self.rect_dy_label, self.spin_dy,
+        ):
+            widget.hide()
 
         ctrl_layout.addWidget(QLabel('频率:'))
         self.combo_freq = QComboBox()
@@ -185,16 +259,38 @@ class ArrayDesignerPanel(QWidget):
 
     def _on_template_change(self):
         idx = self.combo_template.currentIndex()
-        # 自定义时显示编辑按钮，隐藏阵元数/间距控件；其他模板相反
         is_custom = (idx == 5)
+        is_uca = (idx == 1)
+        is_rect = (idx == 2)
         self.spin_N.setVisible(not is_custom)
         self.btn_edit_custom.setVisible(is_custom)
-        # 间距控件在自定义模式下隐藏，但加权保持在自定义模式下可见
-        self.spin_d.setVisible(not is_custom)
+        self.spin_d.setVisible(not is_custom and not is_rect)
+
+        self.uca_radius_label.setVisible(is_uca)
+        self.spin_radius.setVisible(is_uca)
+        for widget in (
+            self.rect_rows_label, self.spin_rows,
+            self.rect_cols_label, self.spin_cols,
+            self.rect_dx_label, self.spin_dx,
+            self.rect_dy_label, self.spin_dy,
+        ):
+            widget.setVisible(is_rect)
+
+        if is_rect:
+            self._sync_rect_count()
         self._generate_template()
         self._update_all()
 
+    def _sync_rect_count(self):
+        count = self.spin_rows.value() * self.spin_cols.value()
+        if self.spin_N.value() != count:
+            self.spin_N.blockSignals(True)
+            self.spin_N.setValue(count)
+            self.spin_N.blockSignals(False)
+
     def _on_param_change(self):
+        if self.combo_template.currentIndex() == 2:
+            self._sync_rect_count()
         self._generate_template()
         self._update_all()
 
@@ -211,7 +307,7 @@ class ArrayDesignerPanel(QWidget):
                 x = (i - (N-1)/2) * d_lam * lam
                 self.elements.append({'x': x, 'y': 0.0, 'amp': 1.0, 'phase': 0.0})
         elif idx == 1:  # UCA
-            radius = d_lam * lam * N / (2 * math.pi)
+            radius = self.spin_radius.value() * lam
             self.elements = []
             for i in range(N):
                 angle = 2 * math.pi * i / N
@@ -221,15 +317,15 @@ class ArrayDesignerPanel(QWidget):
                     'amp': 1.0, 'phase': 0.0
                 })
         elif idx == 2:  # 矩形面阵
-            cols = int(math.sqrt(N))
-            rows = (N + cols - 1) // cols
+            rows = self.spin_rows.value()
+            cols = self.spin_cols.value()
+            dx_lam = self.spin_dx.value()
+            dy_lam = self.spin_dy.value()
             self.elements = []
             for r in range(rows):
                 for c in range(cols):
-                    if len(self.elements) >= N:
-                        break
-                    x = (c - (cols-1)/2) * d_lam * lam
-                    y = (r - (rows-1)/2) * d_lam * lam
+                    x = (c - (cols - 1) / 2) * dx_lam * lam
+                    y = (r - (rows - 1) / 2) * dy_lam * lam
                     self.elements.append({'x': x, 'y': y, 'amp': 1.0, 'phase': 0.0})
         elif idx == 3:  # L阵
             Nx = max(N // 2, 2)
@@ -257,106 +353,209 @@ class ArrayDesignerPanel(QWidget):
     def _compute_weights(self):
         """计算加权系数"""
         N = len(self.elements)
+        if N == 0:
+            return np.array([], dtype=float)
         w_idx = self.combo_weight.currentIndex()
-        amps = np.ones(N)
-        if w_idx == 0:  # 均匀
+        if w_idx == 0:
             amps = np.ones(N)
-        elif w_idx == 1:  # 余弦
-            amps = np.cos(np.linspace(-math.pi/2, math.pi/2, N)) + 0.1
-        elif w_idx == 2:  # 汉明
-            amps = 0.54 - 0.46 * np.cos(2 * math.pi * np.arange(N) / (N-1))
-        elif w_idx == 3:  # 切比雪夫-30
+        elif w_idx == 1:
+            amps = np.cos(np.linspace(-math.pi / 2, math.pi / 2, N)) + 0.1
+        elif w_idx == 2:
+            amps = 0.54 - 0.46 * np.cos(
+                2 * math.pi * np.arange(N) / max(N - 1, 1))
+        elif w_idx == 3:
             amps = self._chebyshev(N, 30)
-        elif w_idx == 4:  # 切比雪夫-40
+        elif w_idx == 4:
             amps = self._chebyshev(N, 40)
-        return amps / np.max(amps)
+        else:
+            amps = np.ones(N)
+        scale = float(np.max(np.abs(amps)))
+        return amps / scale if scale > 0 else np.zeros(N)
 
     def _chebyshev(self, N, sidelobe_db):
         """切比雪夫加权近似"""
+        if N < 2:
+            return np.ones(max(N, 0))
         beta = 0.5
         x0 = np.cosh(1.0 / N * np.arccosh(10 ** (sidelobe_db / 20)))
         amps = []
         for n in range(N):
             val = 0
             for m in range(N):
-                angle = math.pi * (2*m + 1) / (2*N)
-                val += np.cos((n - (N-1)/2) * angle) * np.cos(beta * math.pi * m / N)
+                angle = math.pi * (2 * m + 1) / (2 * N)
+                val += np.cos((n - (N - 1) / 2) * angle) * np.cos(
+                    beta * math.pi * m / N)
             amps.append(abs(val))
         return np.array(amps)
 
     def _calc_pattern(self, theta_deg):
-        """计算方向图"""
+        """计算方向图，包含阵元幅度和相位。"""
+        _validate_elements(self.elements)
         lam = C / self.fc
         k = 2 * math.pi / lam
         theta = np.deg2rad(theta_deg)
         amps = self._compute_weights()
-        cut = self.combo_cut.currentIndex()  # 0=方位面(XY), 1=俯仰面(XZ)
+        cut = self.combo_cut.currentIndex()
 
         pattern = np.zeros_like(theta, dtype=complex)
         for ei, elem in enumerate(self.elements):
-            if cut == 0:  # 方位面: 沿X轴投影
-                u = elem['x']
-            else:          # 俯仰面: 沿Y轴投影
-                u = elem['y']
-            phase = k * u * np.sin(theta)
-            pattern += amps[ei] * np.exp(1j * phase) * elem['amp']
+            u = elem['x'] if cut == 0 else elem['y']
+            geometric_phase = k * u * np.sin(theta)
+            element_phase = math.radians(float(elem['phase']))
+            pattern += (
+                amps[ei] * np.exp(1j * geometric_phase)
+                * float(elem['amp']) * np.exp(1j * element_phase)
+            )
 
-        gain = 20 * np.log10(np.abs(pattern) / len(self.elements) + 1e-30)
-        return gain - np.max(gain)  # 归一化
+        gain = 20 * np.log10(np.abs(pattern) + 1e-30)
+        return gain - np.max(gain)
+
+    @staticmethod
+    def _local_peak_indices(gains, start, end):
+        peaks = []
+        for index in range(max(1, start), min(len(gains) - 1, end + 1)):
+            if gains[index] >= gains[index - 1] and gains[index] > gains[index + 1]:
+                peaks.append(index)
+            elif gains[index] > gains[index - 1] and gains[index] >= gains[index + 1]:
+                peaks.append(index)
+        return peaks
 
     def _extract_metrics(self, angles, gains):
-        """提取性能指标"""
-        max_gain_db = np.max(gains)
-        max_idx = np.argmax(gains)
+        """提取主瓣边界、左右副瓣和构型相关指标。"""
+        angles = np.asarray(angles, dtype=float)
+        gains = np.asarray(gains, dtype=float)
+        if len(angles) != len(gains) or len(gains) < 3:
+            raise ValueError('方向图采样点不足')
 
-        # 3dB波束宽度
+        max_gain_db = float(np.max(gains))
+        max_idx = int(np.argmax(gains))
         threshold = max_gain_db - 3
-        above = gains >= threshold
-        if np.any(above):
-            left_idx = np.where(above[:max_idx])[0]
-            right_idx = np.where(above[max_idx:])[0]
-            left_angle = angles[left_idx[0]] if len(left_idx) > 0 else angles[0]
-            right_angle = angles[max_idx + right_idx[-1]] if len(right_idx) > 0 else angles[-1]
-            beamwidth = right_angle - left_angle
+
+        left_boundary = max_idx
+        while left_boundary > 0 and gains[left_boundary - 1] >= threshold:
+            left_boundary -= 1
+        right_boundary = max_idx
+        while right_boundary < len(gains) - 1 and gains[right_boundary + 1] >= threshold:
+            right_boundary += 1
+        beamwidth = float(angles[right_boundary] - angles[left_boundary])
+
+        left_peaks = self._local_peak_indices(gains, 1, left_boundary - 1)
+        right_peaks = self._local_peak_indices(
+            gains, right_boundary + 1, len(gains) - 2)
+        sidelobe_indices = left_peaks + right_peaks
+        left_sll = (
+            float(gains[left_peaks[np.argmax(gains[left_peaks])]] - max_gain_db)
+            if left_peaks else -99.0
+        )
+        right_sll = (
+            float(gains[right_peaks[np.argmax(gains[right_peaks])]] - max_gain_db)
+            if right_peaks else -99.0
+        )
+        first_sll = max(left_sll, right_sll)
+
+        grating_candidates = [
+            index for index in sidelobe_indices
+            if gains[index] - max_gain_db > -15
+        ]
+        if grating_candidates:
+            grating_index = max(grating_candidates, key=lambda index: gains[index])
+            grating_level = float(gains[grating_index] - max_gain_db)
+            grating_angle = float(angles[grating_index])
         else:
-            beamwidth = 0
+            grating_level = -99.0
+            grating_angle = 0.0
 
-        # 副瓣电平
-        sidelobes = []
-        in_main = False
-        for i in range(1, len(gains)-1):
-            if gains[i] >= threshold:
-                in_main = True
-            elif gains[i] > gains[i-1] and gains[i] > gains[i+1] and not in_main:
-                sidelobes.append(gains[i])
-        first_sll = max(sidelobes) - max_gain_db if sidelobes else -99
-
-        # 栅瓣检查
-        grating_level = -99
-        grating_angle = 0
-        for i in range(1, len(gains)-1):
-            if gains[i] > gains[i-1] and gains[i] > gains[i+1]:
-                val = gains[i] - max_gain_db
-                if val > -15 and abs(angles[i] - angles[max_idx]) > beamwidth/2:
-                    if val > grating_level:
-                        grating_level = val
-                        grating_angle = angles[i]
-
-        d_lam = self.spin_d.value()
-        unambig = 2 * math.degrees(math.asin(1/(2*d_lam))) if d_lam > 0.5 else 180
-
+        template_idx = self.combo_template.currentIndex()
+        lam = C / self.fc
         N = len(self.elements)
-        aperture = max([e['x'] for e in self.elements]) - min([e['x'] for e in self.elements])
-        array_gain = 10 * math.log10(N) + 3  # 近似
+        d_lam = self.spin_d.value()
+        array_type = (
+            'ULA' if template_idx == 0 else
+            'UCA' if template_idx == 1 else
+            'RECT' if template_idx == 2 else
+            'CUSTOM'
+        )
 
+        if template_idx == 0:
+            aperture_x = (N - 1) * d_lam
+            aperture_y = 0.0
+            aperture = aperture_x
+            beamwidth_formula = f'50.8/(N*d) = {50.8 / max(N * d_lam, 1e-12):.2f}°'
+            theoretical_beamwidth = 50.8 / max(N * d_lam, 1e-12)
+            if d_lam > 1:
+                grating_formula = f'asin(1/d) = {math.degrees(math.asin(min(1 / d_lam, 1))):.1f}°'
+                unambig = math.degrees(math.asin(min(1 / (2 * d_lam), 1)))
+            else:
+                grating_formula = 'd≤1λ，无栅瓣'
+                unambig = 90.0 if d_lam > 0.5 else 180.0
+        elif template_idx == 1:
+            radius_lam = self.spin_radius.value()
+            aperture_x = aperture_y = 2 * radius_lam
+            aperture = aperture_x
+            theoretical_beamwidth = 50.8 / max(2 * radius_lam, 1e-12)
+            beamwidth_formula = (
+                f'50.8/(2R) = {theoretical_beamwidth:.2f}°'
+            )
+            grating_formula = '圆阵无一维线阵栅瓣公式'
+            unambig = 180.0
+        elif template_idx == 2:
+            rows = self.spin_rows.value()
+            cols = self.spin_cols.value()
+            dx_lam = self.spin_dx.value()
+            dy_lam = self.spin_dy.value()
+            aperture_x = (cols - 1) * dx_lam
+            aperture_y = (rows - 1) * dy_lam
+            aperture = math.hypot(aperture_x, aperture_y)
+            theoretical_beamwidth = min(
+                50.8 / max(cols * dx_lam, 1e-12),
+                50.8 / max(rows * dy_lam, 1e-12),
+            )
+            beamwidth_formula = (
+                f'方位 {50.8 / max(cols * dx_lam, 1e-12):.2f}° / '
+                f'俯仰 {50.8 / max(rows * dy_lam, 1e-12):.2f}°'
+            )
+            if dx_lam > 1 or dy_lam > 1:
+                spacing = max(dx_lam, dy_lam)
+                grating_formula = (
+                    f'asin(1/dmax) = '
+                    f'{math.degrees(math.asin(min(1 / spacing, 1))):.1f}°'
+                )
+            else:
+                grating_formula = 'dx,dy≤1λ，无一维栅瓣'
+            unambig = min(
+                90.0 if dx_lam > 0.5 else 180.0,
+                90.0 if dy_lam > 0.5 else 180.0,
+            )
+        else:
+            xs = [float(element['x']) / lam for element in self.elements]
+            ys = [float(element['y']) / lam for element in self.elements]
+            aperture_x = max(xs) - min(xs)
+            aperture_y = max(ys) - min(ys)
+            aperture = math.hypot(aperture_x, aperture_y)
+            theoretical_beamwidth = beamwidth
+            beamwidth_formula = '由数值方向图测量'
+            grating_formula = '自定义阵列按数值峰值判断'
+            unambig = 180.0
+
+        array_gain = 10 * math.log10(max(N, 1)) + 3
         return {
             'gain': array_gain,
             'beamwidth': beamwidth,
+            'theoretical_beamwidth': theoretical_beamwidth,
+            'beamwidth_formula': beamwidth_formula,
             'first_sll': first_sll,
+            'left_sll': left_sll,
+            'right_sll': right_sll,
+            'main_left': float(angles[left_boundary]),
+            'main_right': float(angles[right_boundary]),
             'grating_level': grating_level,
             'grating_angle': grating_angle,
-            'aperture': aperture / (C/self.fc),
+            'grating_formula': grating_formula,
+            'aperture': aperture,
+            'aperture_x': aperture_x,
+            'aperture_y': aperture_y,
             'unambig': unambig,
+            'array_type': array_type,
             'N': N,
             'd_lam': d_lam,
         }
@@ -431,8 +630,10 @@ class ArrayDesignerPanel(QWidget):
             ax.set_ylim(max(-50, np.min(gains) - 2), 3)
             ax.legend(fontsize=8)
 
-        fig.tight_layout()
-        self.pattern_canvas.draw()
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', UserWarning)
+            fig.tight_layout()
+            self.pattern_canvas.draw()
 
     def _update_metrics(self):
         """更新指标显示"""
@@ -440,7 +641,6 @@ class ArrayDesignerPanel(QWidget):
         gains = self._calc_pattern(theta_deg)
         metrics = self._extract_metrics(theta_deg, gains)
 
-        warning = ''
         if metrics['grating_level'] > -10:
             warning = '🔴 ⚠️ 栅瓣严重！'
         elif metrics['grating_level'] > -20:
@@ -448,21 +648,49 @@ class ArrayDesignerPanel(QWidget):
         else:
             warning = '🟢 栅瓣正常'
 
+        type_labels = {
+            'ULA': '均匀线阵',
+            'UCA': '均匀圆阵',
+            'RECT': '矩形面阵',
+            'CUSTOM': '自定义/复合阵',
+        }
+        aperture_label = (
+            f'{metrics["aperture"]:.2f} λ'
+            if metrics['array_type'] != 'RECT'
+            else (
+                f'X={metrics["aperture_x"]:.2f}λ, '
+                f'Y={metrics["aperture_y"]:.2f}λ'
+            )
+        )
+        unambig_text = (
+            f'±{metrics["unambig"]:.1f}°'
+            if metrics['array_type'] not in ('UCA', 'CUSTOM')
+            else '圆阵/自定义按数值方向图判断'
+        )
+        sidelobe_note = (
+            f'左 {metrics["left_sll"]:.1f} / '
+            f'右 {metrics["right_sll"]:.1f} dB'
+        )
         lines = [
-            f'{"指标":<16} {"数值":>10} {"说明":<20}',
-            f'{"─"*50}',
-            f'{"阵元数":<16} {metrics["N"]:>10d} {"":<20}',
-            f'{"阵列增益":<16} {metrics["gain"]:>8.1f} dBi {"":<20}',
-            f'{"3dB波束宽度":<16} {metrics["beamwidth"]:>8.2f}° {"":<20}',
-            f'{"第一副瓣":<16} {metrics["first_sll"]:>8.1f} dB {"越低越好":<20}',
-            f'{"阵列孔径":<16} {metrics["aperture"]:>8.2f} λ {"":<20}',
-            f'{"无模糊范围":<16} ±{metrics["unambig"]:>6.1f}° {"":<20}',
+            f'{"指标":<16} {"数值":>10} {"说明":<28}',
+            f'{"─"*62}',
+            f'{"阵列类型":<16} {type_labels.get(metrics["array_type"], metrics["array_type"]):>10} {"":<28}',
+            f'{"阵元数":<16} {metrics["N"]:>10d} {"":<28}',
+            f'{"阵列增益":<16} {metrics["gain"]:>8.1f} dBi {"近似 10log10(N)+3":<28}',
+            f'{"3dB波束宽度":<16} {metrics["beamwidth"]:>8.2f}° {metrics["beamwidth_formula"]:<28}',
+            f'{"第一副瓣":<16} {metrics["first_sll"]:>8.1f} dB {sidelobe_note:<28}',
+            f'{"主瓣边界":<16} {metrics["main_left"]:>6.1f}°~{metrics["main_right"]:<6.1f}° {"-3dB连续区域":<28}',
+            f'{"阵列孔径":<16} {aperture_label:>10} {"构型相关":<28}',
+            f'{"无模糊范围":<16} {unambig_text:>10} {"":<28}',
             f'',
             f'{"栅瓣电平":<16} {metrics["grating_level"]:>8.1f} dB {warning}',
+            f'{"栅瓣公式":<16} {"":>10} {metrics["grating_formula"]}',
         ]
-        if metrics['grating_level'] > -20:
-            lines.append(f'{"栅瓣角度":<16} {metrics["grating_angle"]:>8.1f}° {"间距需≤0.5λ":<20}')
-
+        if metrics['grating_level'] > -20 and metrics['array_type'] != 'UCA':
+            lines.append(
+                f'{"栅瓣角度":<16} {metrics["grating_angle"]:>8.1f}° '
+                f'{"间距需≤1λ":<20}'
+            )
         self.metrics_text.setPlainText('\n'.join(lines))
 
     def _update_all(self):
@@ -484,19 +712,23 @@ class ArrayDesignerPanel(QWidget):
         self.table.blockSignals(False)
 
     def _on_table_edit(self):
-        """表格编辑后更新"""
-        self.table.blockSignals(True)
-        for i in range(self.table.rowCount()):
-            try:
+        """表格编辑后立即校验并更新方向图和指标。"""
+        parsed = []
+        try:
+            for i in range(self.table.rowCount()):
                 x = float(self.table.item(i, 0).text())
                 y = float(self.table.item(i, 1).text())
                 amp = float(self.table.item(i, 2).text())
                 phase = float(self.table.item(i, 3).text())
-                if i < len(self.elements):
-                    self.elements[i] = {'x': x, 'y': y, 'amp': amp, 'phase': phase}
-            except (ValueError, TypeError, AttributeError):
-                pass
-        self.table.blockSignals(False)
+                parsed.append({'x': x, 'y': y, 'amp': amp, 'phase': phase})
+            _validate_elements(parsed)
+        except (ValueError, TypeError, AttributeError) as exc:
+            self.metrics_text.setPlainText(f'❌ {safe_exception_message(exc)}')
+            logger.warning('阵元表格输入无效: %s', exc)
+            self._update_table()
+            return
+
+        self.elements = parsed
         self._plot_array()
         self._plot_pattern()
         self._update_metrics()
@@ -520,8 +752,9 @@ class ArrayDesignerPanel(QWidget):
 
         # 表格
         self.custom_coords_table = QTableWidget()
-        self.custom_coords_table.setColumnCount(2)
-        self.custom_coords_table.setHorizontalHeaderLabels(['X (m)', 'Y (m)'])
+        self.custom_coords_table.setColumnCount(4)
+        self.custom_coords_table.setHorizontalHeaderLabels(
+            ['X (m)', 'Y (m)', '幅度', '相位(°)'])
         self.custom_coords_table.horizontalHeader().setStretchLastSection(True)
         self.custom_coords_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         dlg_layout.addWidget(self.custom_coords_table, 1)
@@ -556,18 +789,17 @@ class ArrayDesignerPanel(QWidget):
         okcancel.addWidget(btn_cancel)
         dlg_layout.addLayout(okcancel)
 
-        # 加载当前自定义坐标
-        if self._custom_coords is not None and len(self._custom_coords) > 0:
-            self.custom_coords_table.setRowCount(len(self._custom_coords))
-            for i, (x, y) in enumerate(self._custom_coords):
-                self.custom_coords_table.setItem(i, 0, QTableWidgetItem(f'{x:.6f}'))
-                self.custom_coords_table.setItem(i, 1, QTableWidgetItem(f'{y:.6f}'))
-        else:
-            # 默认加载当前 elements 的坐标
-            self.custom_coords_table.setRowCount(len(self.elements))
-            for i, e in enumerate(self.elements):
-                self.custom_coords_table.setItem(i, 0, QTableWidgetItem(f'{e["x"]:.6f}'))
-                self.custom_coords_table.setItem(i, 1, QTableWidgetItem(f'{e["y"]:.6f}'))
+        # 始终加载当前阵元，保留已编辑的幅度和相位。
+        self.custom_coords_table.setRowCount(len(self.elements))
+        for i, element in enumerate(self.elements):
+            self.custom_coords_table.setItem(
+                i, 0, QTableWidgetItem(f'{float(element["x"]):.6f}'))
+            self.custom_coords_table.setItem(
+                i, 1, QTableWidgetItem(f'{float(element["y"]):.6f}'))
+            self.custom_coords_table.setItem(
+                i, 2, QTableWidgetItem(f'{float(element["amp"]):.4f}'))
+            self.custom_coords_table.setItem(
+                i, 3, QTableWidgetItem(f'{float(element["phase"]):.1f}'))
 
         dialog.exec_()
 
@@ -577,6 +809,8 @@ class ArrayDesignerPanel(QWidget):
         self.custom_coords_table.insertRow(row)
         self.custom_coords_table.setItem(row, 0, QTableWidgetItem('0.000000'))
         self.custom_coords_table.setItem(row, 1, QTableWidgetItem('0.000000'))
+        self.custom_coords_table.setItem(row, 2, QTableWidgetItem('1.0000'))
+        self.custom_coords_table.setItem(row, 3, QTableWidgetItem('0.0'))
 
     def _custom_remove_row(self):
         """删除选中的行"""
@@ -598,34 +832,44 @@ class ArrayDesignerPanel(QWidget):
             if data.ndim == 1:
                 data = data.reshape(-1, 1)
             if data.shape[1] >= 2:
+                if len(data) < 2:
+                    raise ValueError('自定义阵列至少需要 2 个有效阵元')
                 self.custom_coords_table.setRowCount(len(data))
                 for i, row in enumerate(data):
                     self.custom_coords_table.setItem(i, 0, QTableWidgetItem(f'{row[0]:.6f}'))
                     self.custom_coords_table.setItem(i, 1, QTableWidgetItem(f'{row[1]:.6f}'))
-                QMessageBox.information(self, '导入成功', f'已导入 {len(data)} 个阵元坐标')
+                    amp = float(row[2]) if data.shape[1] >= 3 else 1.0
+                    phase = float(row[3]) if data.shape[1] >= 4 else 0.0
+                    self.custom_coords_table.setItem(i, 2, QTableWidgetItem(f'{amp:.4f}'))
+                    self.custom_coords_table.setItem(i, 3, QTableWidgetItem(f'{phase:.1f}'))
+                QMessageBox.information(self, '导入成功', f'已导入 {len(data)} 个阵元')
             else:
                 QMessageBox.warning(self, '格式错误', 'CSV文件至少需要2列数据 (X, Y)')
         except Exception as e:
-            QMessageBox.warning(self, '导入失败', str(e))
+            handle_ui_exception(self, logger, '导入阵列坐标', e)
 
     def _custom_apply(self, dialog):
         """应用自定义坐标"""
         try:
             coords = []
+            elements = []
             for i in range(self.custom_coords_table.rowCount()):
                 x = float(self.custom_coords_table.item(i, 0).text())
                 y = float(self.custom_coords_table.item(i, 1).text())
+                amp = float(self.custom_coords_table.item(i, 2).text())
+                phase = float(self.custom_coords_table.item(i, 3).text())
                 coords.append((x, y))
+                elements.append({'x': x, 'y': y, 'amp': amp, 'phase': phase})
+            _validate_elements(elements)
             self._custom_coords = coords
-            # 更新 elements
-            self.elements = []
-            for x, y in coords:
-                self.elements.append({'x': x, 'y': y, 'amp': 1.0, 'phase': 0.0})
+            self.elements = elements
             self._update_all()
             dialog.accept()
             QMessageBox.information(self, '编辑完成', f'已应用 {len(coords)} 个阵元的自定义坐标')
+            return True
         except (ValueError, TypeError, AttributeError) as e:
-            QMessageBox.warning(self, '输入错误', f'坐标格式无效：{str(e)}')
+            handle_ui_exception(self, logger, '应用阵列坐标', e)
+            return False
 
     def statusBar(self):
         parent = self.parent()

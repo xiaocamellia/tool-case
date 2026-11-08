@@ -1,6 +1,14 @@
 from dataclasses import dataclass
 
 from .app_config import COLORS, LINESTYLES
+from .schemas import (
+    SCHEMA_VERSION,
+    CalibrationConfig,
+    ProjectRecord,
+    TruthReviewConfig,
+    migrate_json_schema,
+    validate_schema,
+)
 
 import pandas as pd
 from PyQt5.QtWidgets import QWidget, QTextEdit

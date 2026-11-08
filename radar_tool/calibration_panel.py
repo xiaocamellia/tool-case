@@ -6,6 +6,7 @@ import copy
 import datetime as dt
 import json
 import os
+import threading
 
 import numpy as np
 import pandas as pd
@@ -48,7 +49,18 @@ from .calibration_batch_store import (
     CalibrationBatchStore,
 )
 from .calibration_data_loader import load_calibration_data
-from .calibration_optimizer import run_calibration
+from .calibration_optimizer import CalibrationCancelled, run_calibration
+from .background_tasks import (
+    ensure_task_can_start, register_background_task, task_result_is_current,
+)
+from .error_ui import handle_ui_exception
+from .errors import ExportError, log_exception, safe_exception_message
+from .export_safety import (
+    BatchExportError,
+    atomic_export_batch,
+    build_export_metadata,
+    write_dataframe_csv,
+)
 from .logger import get_logger
 from .ui_theme import style_primary_button, style_warning_button
 
@@ -60,6 +72,8 @@ class CalibrationWorker(QObject):
 
     finished = pyqtSignal(dict)
     failed = pyqtSignal(str)
+    cancelled = pyqtSignal(str)
+    progress = pyqtSignal(int, str)
 
     def __init__(self, data, fixed_params, init_params, max_iterations):
         super().__init__()
@@ -67,18 +81,29 @@ class CalibrationWorker(QObject):
         self.fixed_params = fixed_params
         self.init_params = init_params
         self.max_iterations = max_iterations
+        self._cancel_event = threading.Event()
+
+    def cancel(self):
+        self._cancel_event.set()
 
     def run(self):
         try:
+            self.progress.emit(5, '准备校正数据')
             result = run_calibration(
                 self.data,
                 self.fixed_params,
                 self.init_params,
                 max_iterations=self.max_iterations,
+                cancel_event=self._cancel_event,
+                progress_callback=self.progress.emit,
             )
+            self.progress.emit(100, '校正完成')
             self.finished.emit(result)
+        except CalibrationCancelled as exc:
+            self.cancelled.emit(str(exc))
         except Exception as exc:
-            self.failed.emit(str(exc))
+            log_exception(logger, '校正后台任务', exc)
+            self.failed.emit(safe_exception_message(exc))
 
 
 class CalibrationPanel(QWidget):
@@ -104,6 +129,8 @@ class CalibrationPanel(QWidget):
         self._calibration_thread = None
         self._calibration_worker = None
         self._run_context = None
+        self._calibration_task_name = ''
+        self._calibration_task_version = 0
 
         self._init_ui()
         self._connect_dirty_signals()
@@ -536,7 +563,7 @@ class CalibrationPanel(QWidget):
             saved = self.batch_store.save_profile(
                 self._collect_profile(), self.current_profile_id)
         except Exception as exc:
-            QMessageBox.warning(self, '保存失败', str(exc))
+            handle_ui_exception(self, logger, '保存校正配置', exc)
             return
         self.current_profile_id = saved['id']
         self._profile_dirty = False
@@ -551,7 +578,7 @@ class CalibrationPanel(QWidget):
         try:
             profile = self._collect_profile()
         except ValueError as exc:
-            QMessageBox.warning(self, '参数无效', str(exc))
+            handle_ui_exception(self, logger, '校验校正参数', exc)
             return
         default_name = profile['name'] + ' 副本'
         name, accepted = QInputDialog.getText(
@@ -562,7 +589,7 @@ class CalibrationPanel(QWidget):
         try:
             saved = self.batch_store.save_profile(profile)
         except Exception as exc:
-            QMessageBox.warning(self, '另存失败', str(exc))
+            handle_ui_exception(self, logger, '另存校正配置', exc)
             return
         self._refresh_profile_combo(saved['id'])
         self._apply_profile(saved)
@@ -610,10 +637,10 @@ class CalibrationPanel(QWidget):
         except Exception as exc:
             self.calibration_data = None
             self._loaded_data_path = ''
-            self.lbl_data_status.setText(f'加载失败：{exc}')
+            self.lbl_data_status.setText(f'加载失败：{safe_exception_message(exc)}')
             self.lbl_data_status.setStyleSheet('color: #b91c1c;')
             if show_dialog:
-                QMessageBox.warning(self, '数据加载失败', str(exc))
+                handle_ui_exception(self, logger, '加载校正数据', exc)
             return False
         self.calibration_data = data
         self._loaded_data_path = os.path.abspath(filepath)
@@ -649,7 +676,7 @@ class CalibrationPanel(QWidget):
         try:
             profile = self._collect_profile()
         except ValueError as exc:
-            QMessageBox.warning(self, '参数无效', str(exc))
+            handle_ui_exception(self, logger, '校验校正参数', exc)
             return
 
         self._run_context = {
@@ -661,6 +688,9 @@ class CalibrationPanel(QWidget):
             key: np.array(self.calibration_data[key], copy=True)
             for key in ('az_true', 'el_true', 'az_meas', 'el_meas')
         }
+        task_name = f'测向校正：{profile["name"]}'
+        ensure_task_can_start(self, task_name)
+        self._calibration_task_name = task_name
         self._calibration_thread = QThread(self)
         self._calibration_worker = CalibrationWorker(
             worker_data,
@@ -674,15 +704,33 @@ class CalibrationPanel(QWidget):
         self._calibration_worker.failed.connect(self._on_calibration_failed)
         self._calibration_worker.finished.connect(self._calibration_thread.quit)
         self._calibration_worker.failed.connect(self._calibration_thread.quit)
+        self._calibration_worker.cancelled.connect(self._calibration_thread.quit)
+        self._calibration_worker.cancelled.connect(
+            self._on_calibration_cancelled
+        )
+        self._calibration_worker.cancelled.connect(
+            self._calibration_worker.deleteLater
+        )
         self._calibration_thread.finished.connect(self._cleanup_calibration_thread)
         self.btn_run.setEnabled(False)
         self.btn_run.setText('校正计算中...')
         self.txt_result.setPlainText(
             f'正在校正\n批次：{profile["name"]}\n样本数：{self.calibration_data["sample_count"]}')
         self._show_status('测向校正正在后台运行...')
+        self._calibration_task_version = register_background_task(
+            self,
+            task_name,
+            self._calibration_thread,
+            self._calibration_worker,
+            self._calibration_worker.cancel,
+        )
         self._calibration_thread.start()
 
     def _on_calibration_finished(self, result):
+        if not task_result_is_current(
+            self, self._calibration_task_name, self._calibration_task_version
+        ):
+            return
         result['context'] = copy.deepcopy(self._run_context)
         result['completed_at'] = dt.datetime.now().isoformat(timespec='seconds')
         self.result = result
@@ -712,10 +760,23 @@ class CalibrationPanel(QWidget):
             f'zz={params["zz_r4_ZT"]:.6f}, cost={result["final_cost"]:.8g}')
 
     def _on_calibration_failed(self, message):
+        if not task_result_is_current(
+            self, self._calibration_task_name, self._calibration_task_version
+        ):
+            return
         self.txt_result.setPlainText(f'校正失败：{message}')
         self._show_status('测向校正失败')
         logger.error(f'测向校正失败: {message}')
         QMessageBox.critical(self, '校正失败', message)
+
+    def _on_calibration_cancelled(self, message):
+        if not task_result_is_current(
+            self, self._calibration_task_name, self._calibration_task_version
+        ):
+            return
+        self.txt_result.setPlainText(message)
+        self._show_status('测向校正已取消')
+        logger.info('测向校正已取消: %s', message)
 
     def _cleanup_calibration_thread(self):
         if self._calibration_worker is not None:
@@ -802,27 +863,106 @@ class CalibrationPanel(QWidget):
         if not filepath.lower().endswith('.json'):
             filepath += '.json'
         stem = os.path.splitext(filepath)[0]
-        csv_path = stem + '_样本明细.csv'
-        image_path = stem + '_误差曲线.png'
+        batch_target = stem
+        sequence = 2
+        while os.path.exists(batch_target):
+            batch_target = f'{stem}_{sequence:02d}'
+            sequence += 1
+        batch_name = os.path.basename(batch_target)
+        filename_stem = os.path.basename(stem)
+        json_filename = os.path.basename(filepath)
+        csv_filename = f'{filename_stem}_样本明细.csv'
+        image_filename = f'{filename_stem}_误差曲线.png'
         try:
             serializable = {
                 key: value for key, value in self.result.items()
                 if key != 'series'
             }
-            with open(filepath, 'w', encoding='utf-8') as file:
-                json.dump(serializable, file, ensure_ascii=False, indent=2)
-            pd.DataFrame(self.result['series']).to_csv(
-                csv_path, index=False, encoding='utf-8-sig')
-            self.figure.savefig(image_path, dpi=300, bbox_inches='tight')
-        except Exception as exc:
-            logger.error(f'校正结果导出失败: {exc}')
-            QMessageBox.critical(self, '导出失败', str(exc))
+            context = self.result.get('context', {})
+            source_path = context.get('source_path') or self._loaded_data_path
+            profile = context.get('profile', {})
+            export_metadata = build_export_metadata(
+                input_summary={
+                    'source_file': os.path.basename(source_path or ''),
+                    'profile': profile.get('name', ''),
+                    'sample_rows': len(self.result['series']),
+                    'started_at': context.get('started_at', ''),
+                    'completed_at': self.result.get('completed_at', ''),
+                },
+                parameters={
+                    'profile': profile,
+                    'optimized_params': self.result.get(
+                        'optimized_params', {}
+                    ),
+                    'initial_cost': self.result.get('initial_cost'),
+                    'final_cost': self.result.get('final_cost'),
+                },
+            )
+            serializable['export_metadata'] = export_metadata
+
+            def write_batch(temporary_directory):
+                json_path = os.path.join(
+                    temporary_directory, json_filename
+                )
+                csv_path = os.path.join(temporary_directory, csv_filename)
+                image_path = os.path.join(
+                    temporary_directory, image_filename
+                )
+                metadata_path = os.path.join(
+                    temporary_directory, '00_导出元数据.json'
+                )
+                with open(json_path, 'w', encoding='utf-8') as file:
+                    json.dump(
+                        serializable, file, ensure_ascii=False, indent=2
+                    )
+                write_dataframe_csv(
+                    pd.DataFrame(self.result['series']),
+                    csv_path,
+                    index=False,
+                    encoding='utf-8-sig',
+                )
+                self.figure.savefig(
+                    image_path, dpi=300, bbox_inches='tight'
+                )
+                with open(metadata_path, 'w', encoding='utf-8') as file:
+                    json.dump(
+                        export_metadata, file, ensure_ascii=False, indent=2
+                    )
+
+            atomic_export_batch(batch_target, write_batch)
+        except (OSError, ValueError, TypeError) as exc:
+            handle_ui_exception(
+                self,
+                logger,
+                '导出校正结果',
+                ExportError('校正结果导出失败，请检查目录权限和磁盘空间'),
+            )
             return
-        logger.info(f'校正结果已导出: {filepath}')
+        except BatchExportError as exc:
+            message = safe_exception_message(exc)
+            logger.error('导出校正结果失败: %s', message)
+            QMessageBox.critical(
+                self,
+                '导出失败',
+                f'导出校正结果失败：{message}',
+            )
+            return
+        except Exception as exc:
+            handle_ui_exception(self, logger, '导出校正结果', exc)
+            return
+        json_path = os.path.join(batch_target, json_filename)
+        csv_path = os.path.join(batch_target, csv_filename)
+        image_path = os.path.join(batch_target, image_filename)
+        metadata_path = os.path.join(batch_target, '00_导出元数据.json')
+        logger.info('校正结果批次已导出: %s', batch_target)
         QMessageBox.information(
             self,
             '导出完成',
-            f'参数与指标：{filepath}\n样本明细：{csv_path}\n误差曲线：{image_path}',
+            f'批次目录：{batch_name}\n'
+            f'参数与指标：{json_path}\n'
+            f'样本明细：{csv_path}\n'
+            f'误差曲线：{image_path}\n'
+            f'导出元数据：{metadata_path}',
         )
         self._show_status('测向校正结果已导出')
 

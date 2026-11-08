@@ -1,7 +1,9 @@
 """Offscreen integration tests for responsive truth review analysis."""
 
+import json
 import os
 import tempfile
+import threading
 import time
 import unittest
 from unittest.mock import patch
@@ -16,6 +18,7 @@ from PyQt5.QtWidgets import QApplication, QLabel, QMainWindow
 from radar_tool.compare_analysis import (
     CompareAnalysisMixin, MAX_PLOT_POINTS, find_metric_column,
 )
+from radar_tool.compare_data import _load_compare_radar_payload
 from radar_tool.main_window import MainWindow
 from radar_tool.run import configure_matplotlib
 
@@ -54,6 +57,14 @@ class TruthReviewPanelTests(unittest.TestCase):
             completed,
             "数据真值复核后台任务超过 10 秒仍未结束",
         )
+
+    def _wait_for_compare_file_load(self, host):
+        deadline = time.monotonic() + 10
+        while getattr(host, '_compare_load_thread', None) is not None:
+            self.assertLess(time.monotonic(), deadline, '数据加载线程超时')
+            self.app.processEvents(QEventLoop.AllEvents, 20)
+            time.sleep(0.001)
+        self.app.processEvents()
 
     def _run_two_stages(self, host):
         host.run_compare_coarse_alignment()
@@ -169,6 +180,34 @@ class TruthReviewPanelTests(unittest.TestCase):
                 self.assertEqual(
                     widgets['enabled'].isChecked(), True,
                 )
+            host.close()
+
+    def test_large_radar_load_runs_in_background(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_path = os.path.join(directory, 'RADAR.txt')
+            np.savetxt(data_path, np.arange(60, dtype=float).reshape(10, 6))
+            host = TruthReviewHost()
+            release_loader = threading.Event()
+
+            def delayed_loader(filepath):
+                release_loader.wait(2)
+                return _load_compare_radar_payload(filepath)
+
+            with patch(
+                'radar_tool.compare_data.ASYNC_COMPARE_LOAD_BYTES', 0
+            ), patch(
+                'radar_tool.compare_analysis.QFileDialog.getOpenFileName',
+                return_value=(data_path, ''),
+            ), patch(
+                'radar_tool.compare_data._load_compare_radar_payload',
+                side_effect=delayed_loader,
+            ):
+                host.load_compare_test_data()
+                self.assertIsNotNone(host._compare_load_thread)
+                release_loader.set()
+                self._wait_for_compare_file_load(host)
+
+            self.assertEqual(len(host.compare_test_df), 10)
             host.close()
 
     def test_only_checked_distance_is_analyzed(self):
@@ -497,10 +536,34 @@ class TruthReviewPanelTests(unittest.TestCase):
                 '03_雷达测量数据.csv', '04_GPS原始真值数据.csv',
                 '05_GPS时间插值数据.csv', '06_粗对齐结果.csv',
                 '07_误差指标.csv', '08_对齐算法比较.csv',
-                '09_复核配置.json', '图件_04_粗对齐差值.png',
+                '00_导出元数据.json', '09_复核配置.json',
+                '图件_04_粗对齐差值.png',
                 '图件_05_精对齐曲线.png',
             }
             self.assertTrue(expected_files.issubset(set(os.listdir(batch))))
+            self.assertFalse([
+                name for name in os.listdir(export_root)
+                if name.startswith('.batch.tmp-')
+            ])
+            with open(
+                os.path.join(batch, '00_导出元数据.json'),
+                encoding='utf-8',
+            ) as handle:
+                metadata = json.load(handle)
+            self.assertEqual(metadata['version'], '1.0.0')
+            self.assertEqual(metadata['schema_version'], 1)
+            self.assertIn('generated_at', metadata)
+            self.assertEqual(metadata['input_summary']['radar_file'], 'RADAR_A.txt')
+            self.assertIn('alignment_mapping', metadata['parameters'])
+            with open(
+                os.path.join(batch, '09_复核配置.json'),
+                encoding='utf-8',
+            ) as handle:
+                configuration = json.load(handle)
+            self.assertEqual(
+                configuration['export_metadata'],
+                metadata,
+            )
 
             final_table = pd.read_csv(
                 os.path.join(batch, '01_真值复核结果.csv'), encoding='utf-8-sig'

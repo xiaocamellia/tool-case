@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+
 import numpy as np
 from scipy.optimize import minimize
 
@@ -9,13 +11,19 @@ from .calibration_metrics import calculate_comparison_metrics
 from .calibration_model import azimuth_difference, simulate_angles
 
 
+class CalibrationCancelled(RuntimeError):
+    """用户或关闭流程请求停止校正优化。"""
+
+
 def _validated_data(data: dict) -> dict[str, np.ndarray]:
     required = ('az_true', 'el_true', 'az_meas', 'el_meas')
-    result = {}
+    result: dict[str, np.ndarray] = {}
     for name in required:
         if name not in data:
             raise ValueError(f'缺少校正数据字段: {name}')
-        values = np.asarray(data[name], dtype=float).reshape(-1)
+        values: np.ndarray = np.asarray(
+            data[name], dtype=float
+        ).reshape(-1)
         if values.size == 0 or not np.all(np.isfinite(values)):
             raise ValueError(f'{name} 为空或包含无效数值')
         result[name] = values
@@ -32,9 +40,11 @@ def run_calibration(
     *,
     max_iterations: int = 1000,
     tolerance: float = 1e-8,
+    cancel_event=None,
+    progress_callback=None,
 ) -> dict:
     """Optimize yy_r4/zz_r4 and return complete before/after results."""
-    values = _validated_data(data)
+    values: dict[str, np.ndarray] = _validated_data(data)
     initial = np.array([
         float(init_params['yy_r4_ZT']),
         float(init_params['zz_r4_ZT']),
@@ -42,25 +52,48 @@ def run_calibration(
     if not np.all(np.isfinite(initial)):
         raise ValueError('优化初值包含无效数值')
 
+    def ensure_not_cancelled():
+        if cancel_event is not None and cancel_event.is_set():
+            raise CalibrationCancelled('测向校正已取消')
+
+    def report(percent, message):
+        if progress_callback is not None:
+            progress_callback(percent, message)
+
     def evaluate(params):
+        ensure_not_cancelled()
         az_sim, el_sim = simulate_angles(
             params[0], params[1], values['az_true'], values['el_true'], fixed_params)
         err_az = azimuth_difference(values['az_meas'], az_sim)
         err_el = values['el_meas'] - el_sim
         return float(np.sum(err_az ** 2 + err_el ** 2))
 
+    report(5, '校验初始参数')
     initial_cost = evaluate(initial)
+    iteration = {'count': 0}
+
+    def optimizer_callback(_params):
+        ensure_not_cancelled()
+        iteration['count'] += 1
+        percent = min(95, 10 + int(
+            85 * iteration['count'] / max(1, max_iterations)
+        ))
+        report(percent, f'优化迭代 {iteration["count"]}')
+
     optimized = minimize(
         evaluate,
         initial,
         method='Nelder-Mead',
+        callback=optimizer_callback,
         options={
             'maxiter': max(1, int(max_iterations)),
             'xatol': float(tolerance),
             'fatol': float(tolerance),
         },
     )
-    final_params = np.asarray(optimized.x, dtype=float)
+    ensure_not_cancelled()
+    report(96, '整理优化结果')
+    final_params: np.ndarray = np.asarray(optimized.x, dtype=float)
     final_cost = evaluate(final_params)
     if not np.isfinite(final_cost):
         raise ValueError('优化结果无效，请检查数据和固定参数')

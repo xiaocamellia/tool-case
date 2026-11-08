@@ -8,6 +8,12 @@ import json
 import datetime
 import hashlib
 import shutil
+import re
+import stat
+import struct
+import copy
+import ntpath
+from typing import Any
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox,
     QPushButton, QLabel, QFileDialog, QComboBox, QDoubleSpinBox,
@@ -20,25 +26,50 @@ from PyQt5.QtCore import Qt, QDate, QTimer
 from PyQt5.QtGui import QFont, QColor, QPixmap
 from datetime import date
 
+Document: Any = None
+Inches: Any = lambda value: value
+Pt: Any = lambda value: value
+Cm: Any = lambda value: value
+Emu: Any = lambda value: value
+RGBColor: Any = lambda red, green, blue: (red, green, blue)
+WD_ALIGN_PARAGRAPH: Any = None
+WD_LINE_SPACING: Any = None
+WD_TABLE_ALIGNMENT: Any = None
+WD_ORIENT: Any = None
+qn: Any = None
+OxmlElement: Any = None
+
 try:
-    from docx import Document
-    from docx.shared import Inches, Pt, Cm, RGBColor, Emu
-    from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
-    from docx.enum.table import WD_TABLE_ALIGNMENT
-    from docx.enum.section import WD_ORIENT
-    from docx.oxml.ns import qn
-    from docx.oxml import OxmlElement
+    from docx import Document as _Document
+    from docx.shared import Inches as _Inches, Pt as _Pt, Cm as _Cm
+    from docx.shared import RGBColor as _RGBColor, Emu as _Emu
+    from docx.enum.text import (
+        WD_ALIGN_PARAGRAPH as _WD_ALIGN_PARAGRAPH,
+        WD_LINE_SPACING as _WD_LINE_SPACING,
+    )
+    from docx.enum.table import WD_TABLE_ALIGNMENT as _WD_TABLE_ALIGNMENT
+    from docx.enum.section import WD_ORIENT as _WD_ORIENT
+    from docx.oxml.ns import qn as _qn
+    from docx.oxml import OxmlElement as _OxmlElement
+
+    Document = _Document
+    Inches, Pt, Cm, Emu = _Inches, _Pt, _Cm, _Emu
+    RGBColor = _RGBColor
+    WD_ALIGN_PARAGRAPH = _WD_ALIGN_PARAGRAPH
+    WD_LINE_SPACING = _WD_LINE_SPACING
+    WD_TABLE_ALIGNMENT = _WD_TABLE_ALIGNMENT
+    WD_ORIENT = _WD_ORIENT
+    qn, OxmlElement = _qn, _OxmlElement
 except ModuleNotFoundError:
-    Document = None
-    Inches = Pt = Cm = Emu = lambda value: value
-    RGBColor = lambda red, green, blue: (red, green, blue)
-    WD_ALIGN_PARAGRAPH = WD_LINE_SPACING = WD_TABLE_ALIGNMENT = WD_ORIENT = None
-    qn = OxmlElement = None
+    pass
 
 from .ui_theme import (
     set_button_icon, style_primary_button, style_warning_button, style_calc_button
 )
+from .error_ui import handle_ui_exception
+from .errors import ExportError, safe_exception_message
 from .logger import get_logger
+from .schemas import ProjectRecord, SCHEMA_VERSION, migrate_schema
 from .runtime_paths import get_user_data_dir, get_resource_path
 
 logger = get_logger('exp_recorder')
@@ -48,8 +79,129 @@ os.makedirs(DATA_DIR, exist_ok=True)
 IMAGES_DIR = os.path.join(DATA_DIR, 'images')
 os.makedirs(IMAGES_DIR, exist_ok=True)
 
+EXPERIMENTS_SCHEMA_VERSION = SCHEMA_VERSION
+EXPERIMENTS_SCHEMA_KEYS = {'schema_version', 'projects'}
+EXPERIMENT_ID_PATTERN = re.compile(r'[A-Za-z0-9_-]{1,128}')
+SUPPORTED_IMAGE_FORMATS = {'.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff', '.webp'}
+MAX_IMAGE_FILE_SIZE = 50 * 1024 * 1024
+MAX_IMAGE_PIXELS = 50_000_000
+MAX_IMAGE_HEADER_BYTES = 1024 * 1024
+MAX_TIFF_DIRECTORY_ENTRIES = 4096
+MAX_JSON_FILE_SIZE = 10 * 1024 * 1024
 
-class ExpRecorderPanel(QWidget):
+from . import experiment_images as _image_helpers
+from . import experiment_schema as _schema_helpers
+from . import experiment_storage as _storage_helpers
+
+def _reject_json_constant(value):
+    return _storage_helpers._reject_json_constant(value)
+
+def _validate_json_depth(value, depth=1):
+    return _storage_helpers._validate_json_depth(value, depth)
+
+def _read_json_with_limits(filepath, validator=None):
+    return _storage_helpers._read_json_with_limits(filepath, validator)
+
+def _quarantine_corrupt_file(filepath):
+    return _storage_helpers._quarantine_corrupt_file(filepath)
+
+def _backup_valid_json(filepath, validator):
+    return _storage_helpers._backup_valid_json(filepath, validator)
+
+def validate_experiment_id(value, field_name=None):
+    if field_name is None:
+        field_name = "ID"
+    return _schema_helpers.validate_experiment_id(value, field_name)
+
+def _normalize_text_fields(record, fields):
+    return _schema_helpers._normalize_text_fields(record, fields)
+
+def _normalize_record(record):
+    return _schema_helpers._normalize_record(record)
+
+def _normalize_projects_payload(payload):
+    return _schema_helpers._normalize_projects_payload(payload)
+
+def _is_within_directory(*args, **kwargs):
+    return _image_helpers._is_within_directory(*args, **kwargs)
+
+def _contains_symlink_component(*args, **kwargs):
+    return _image_helpers._contains_symlink_component(*args, **kwargs)
+
+def _resolve_images_root():
+    return _image_helpers._resolve_images_root()
+
+def _resolve_inside_images_dir(path, must_exist=True):
+    return _image_helpers._resolve_inside_images_dir(path, must_exist)
+
+def _tiff_dimensions(*args, **kwargs):
+    return _image_helpers._tiff_dimensions(*args, **kwargs)
+
+def _image_dimensions_from_header(*args, **kwargs):
+    return _image_helpers._image_dimensions_from_header(*args, **kwargs)
+
+def _validate_image_file(*args, **kwargs):
+    return _image_helpers._validate_image_file(*args, **kwargs)
+
+def _safe_image_path(path, validate_image=False):
+    return _image_helpers._safe_image_path(path, validate_image)
+
+def _validate_source_image(path):
+    return _image_helpers._validate_source_image(path)
+
+def _normalize_stored_image_path(path):
+    return _image_helpers._normalize_stored_image_path(path)
+
+def _normalize_image_reference(value):
+    return _image_helpers._normalize_image_reference(value)
+
+
+MAX_JSON_NESTING_DEPTH = 64
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+from .experiment_word_export import WordExportMixin
+
+class ExpRecorderPanel(WordExportMixin, QWidget):
     """试验记录助手主面板"""
 
     def __init__(self, parent=None):
@@ -59,6 +211,7 @@ class ExpRecorderPanel(QWidget):
         self.current_task_id = None
         self.current_record_id = None
         self._record_dirty = False
+        self._data_load_blocked = False
         self._load_data()
         self._init_ui()
         logger.info('试验记录助手已创建')
@@ -478,6 +631,9 @@ class ExpRecorderPanel(QWidget):
             return
 
         if data[0] == 'record':
+            validate_experiment_id(data[1], '项目 ID')
+            validate_experiment_id(data[2], '任务 ID')
+            validate_experiment_id(data[3], '记录 ID')
             _, pid, tid, rid = data
             if self._has_current_record() and (pid, tid, rid) != (self.current_project_id, self.current_task_id, self.current_record_id):
                 self._save_current_record(quiet=True)
@@ -524,13 +680,14 @@ class ExpRecorderPanel(QWidget):
                 break
         if not pid:
             return
+        validate_experiment_id(pid, '项目 ID')
 
         name, ok = QInputDialog.getText(self, '新建任务', '任务名称:')
         if not ok or not name.strip():
             return
 
         tid = hashlib.md5((name + str(datetime.datetime.now())).encode()).hexdigest()[:8]
-        self.projects[pid]['tasks'][tid] = {
+        self.projects[pid].setdefault('tasks', {})[tid] = {
             'name': name,
             'records': {}
         }
@@ -555,6 +712,8 @@ class ExpRecorderPanel(QWidget):
         if not pid or not tid:
             QMessageBox.information(self, '提示', '请先在左侧选中一个任务（或展开项目下的任务）')
             return
+        validate_experiment_id(pid, '项目 ID')
+        validate_experiment_id(tid, '任务 ID')
 
         title, ok = QInputDialog.getText(self, '新建记录', '记录标题:')
         if not ok or not title.strip():
@@ -575,7 +734,9 @@ class ExpRecorderPanel(QWidget):
             'created': datetime.datetime.now().isoformat(),
         }
 
-        self.projects[pid]['tasks'][tid]['records'][rid] = record
+        self.projects[pid].setdefault('tasks', {}).setdefault(tid, {}).setdefault(
+            'records', {}
+        )[rid] = record
         self._save_data()
         self._refresh_tree()
         self._load_record(pid, tid, rid)
@@ -583,6 +744,9 @@ class ExpRecorderPanel(QWidget):
 
     def _load_record(self, pid, tid, rid):
         """加载记录到编辑表单"""
+        validate_experiment_id(pid, '项目 ID')
+        validate_experiment_id(tid, '任务 ID')
+        validate_experiment_id(rid, '记录 ID')
         try:
             rec = self.projects[pid]['tasks'][tid]['records'][rid]
         except KeyError:
@@ -631,7 +795,9 @@ class ExpRecorderPanel(QWidget):
                             icaption = ''
                         else:
                             continue
-                        if not os.path.exists(ipath):
+                        try:
+                            ipath = _safe_image_path(ipath, validate_image=True)
+                        except ValueError:
                             continue
                         display = f'🖼️ {os.path.basename(ipath)}'
                         if icaption:
@@ -654,6 +820,9 @@ class ExpRecorderPanel(QWidget):
             if not quiet:
                 QMessageBox.information(self, '提示', '没有正在编辑的记录')
             return False
+        validate_experiment_id(self.current_project_id, '项目 ID')
+        validate_experiment_id(self.current_task_id, '任务 ID')
+        validate_experiment_id(self.current_record_id, '记录 ID')
 
         steps_data = []
         for sw in self.step_widgets:
@@ -703,6 +872,15 @@ class ExpRecorderPanel(QWidget):
         data = current.data(Qt.UserRole)
         if not data:
             return
+        if data[0] == 'record':
+            validate_experiment_id(data[1], '项目 ID')
+            validate_experiment_id(data[2], '任务 ID')
+            validate_experiment_id(data[3], '记录 ID')
+        elif data[0] == 'task':
+            validate_experiment_id(data[1], '项目 ID')
+            validate_experiment_id(data[2], '任务 ID')
+        elif data[0] == 'project':
+            validate_experiment_id(data[1], '项目 ID')
 
         reply = QMessageBox.question(self, '确认删除', '确定要删除吗？\n此操作不可恢复！',
                                      QMessageBox.Yes | QMessageBox.No)
@@ -745,8 +923,15 @@ class ExpRecorderPanel(QWidget):
             self.lbl_save_status.setText('未保存')
 
     def _image_storage_dir(self, pid, tid, rid):
-        path = os.path.join(IMAGES_DIR, pid, tid, rid)
+        validate_experiment_id(pid, '项目 ID')
+        validate_experiment_id(tid, '任务 ID')
+        validate_experiment_id(rid, '记录 ID')
+        root = _resolve_images_root()
+        candidate = os.path.join(root, pid, tid, rid)
+        path = _resolve_inside_images_dir(candidate, must_exist=False)
         os.makedirs(path, exist_ok=True)
+        if not os.path.isdir(path) or os.path.islink(path):
+            raise ValueError('图片存储目录创建失败')
         return path
 
     def _normalize_image_item(self, data):
@@ -755,24 +940,35 @@ class ExpRecorderPanel(QWidget):
         if not isinstance(data, dict):
             return None
         src = data.get('path', '')
-        if not src or not os.path.exists(src):
-            return None
         caption = data.get('caption', '')
+        if not isinstance(src, str) or not isinstance(caption, str):
+            return None
+        try:
+            src = _validate_source_image(src)
+        except ValueError as exc:
+            logger.warning('拒绝无效截图: %s', exc)
+            return None
         pid = self.current_project_id or 'unknown_project'
         tid = self.current_task_id or 'unknown_task'
         rid = self.current_record_id or 'unknown_record'
         storage_dir = self._image_storage_dir(pid, tid, rid)
         base = os.path.basename(src)
         stem, ext = os.path.splitext(base)
-        digest = hashlib.md5((src + str(os.path.getmtime(src))).encode('utf-8', 'ignore')).hexdigest()[:8]
+        digest = hashlib.md5(
+            (src + str(os.path.getmtime(src))).encode('utf-8', 'ignore')
+        ).hexdigest()[:8]
         dst = os.path.join(storage_dir, f'{stem}_{digest}{ext}')
         try:
             if os.path.abspath(src) != os.path.abspath(dst):
                 shutil.copy2(src, dst)
-            return {'path': dst, 'caption': caption}
-        except Exception as e:
-            logger.warning(f'复制截图失败[{src}]: {e}')
-            return {'path': src, 'caption': caption}
+            dst = _safe_image_path(dst, validate_image=True)
+            return {
+                'path': os.path.relpath(dst, _resolve_images_root()),
+                'caption': caption,
+            }
+        except Exception as exc:
+            logger.warning('复制截图失败: %s', exc)
+            return None
 
     # ==================== 工科报告内置样式模板 - 方案B（全黑/灰军工规范）====================
 
@@ -1008,197 +1204,16 @@ class ExpRecorderPanel(QWidget):
 
     # ---- 导出内容生成方法（全部调用命名样式，无零散硬编码） ----
 
-    def _pstyle(self, doc, ns, style_name):
-        """快捷获取段落样式"""
-        return doc.styles[ns[style_name]]
 
-    def _add_cover_page(self, doc, ns, title_text, include_cover):
-        """添加封面（黑体二号纯黑 / 副标题深灰 / 日期浅灰）"""
-        if not include_cover:
-            return
-        # 主标题
-        p = doc.add_paragraph()
-        p.style = self._pstyle(doc, ns, 'CoverTitle')
-        p.add_run(title_text)
 
-        # 副标题
-        p = doc.add_paragraph()
-        p.style = self._pstyle(doc, ns, 'CoverSubtitle')
-        p.add_run('试验记录报告')
 
-        # 附属信息
-        now_str = datetime.datetime.now().strftime('%Y年%m月%d日')
-        p = doc.add_paragraph()
-        p.style = self._pstyle(doc, ns, 'CoverInfo')
-        p.add_run(f'导出日期：{now_str}')
 
-        doc.add_page_break()
 
-    def _add_h1(self, doc, ns, text):
-        """添加一级标题"""
-        p = doc.add_paragraph()
-        p.style = self._pstyle(doc, ns, 'Report_H1')
-        p.add_run(text)
 
-    def _add_h2(self, doc, ns, text):
-        """添加二级标题"""
-        p = doc.add_paragraph()
-        p.style = self._pstyle(doc, ns, 'Report_H2')
-        p.add_run(text)
 
-    def _add_h3(self, doc, ns, text):
-        """添加三级标题"""
-        p = doc.add_paragraph()
-        p.style = self._pstyle(doc, ns, 'Report_H3')
-        p.add_run(text)
 
-    def _add_body(self, doc, ns, text):
-        """添加正文（带首行缩进）"""
-        if not text.strip():
-            return
-        p = doc.add_paragraph()
-        p.style = self._pstyle(doc, ns, 'Report_Body')
-        p.add_run(text.strip())
 
-    def _add_field_info(self, doc, ns, name, value):
-        """添加试验基础信息（标签加粗、紧凑无缩进）"""
-        if not value:
-            return
-        p = doc.add_paragraph()
-        p.style = self._pstyle(doc, ns, 'Report_Field_Info')
-        run = p.add_run(f'{name}：')
-        run.font.bold = True
-        run.font.color.rgb = self._REPORT_STYLES['field_label_color']
-        p.add_run(str(value))
 
-    def _add_step_item(self, doc, ns, index, title, desc):
-        """添加有序试验步骤"""
-        p = doc.add_paragraph()
-        p.style = self._pstyle(doc, ns, 'Report_Body')
-        p.paragraph_format.first_line_indent = None  # 取消缩进
-        run = p.add_run(f'{index}. ')
-        run.font.bold = True
-        if title:
-            run2 = p.add_run(f'{title}：')
-            run2.font.bold = True
-        if desc:
-            p.add_run(desc)
-
-    def _add_image_caption(self, doc, ns, fig_num, caption_text):
-        """添加图片题注（图X 名称，居中#666666小五）"""
-        p = doc.add_paragraph()
-        p.style = self._pstyle(doc, ns, 'Report_Image_Caption')
-        p.add_run(f'图{fig_num}  {caption_text}')
-
-    def _add_endnote(self, doc, ns, text):
-        """添加尾注"""
-        p = doc.add_paragraph()
-        p.style = self._pstyle(doc, ns, 'Report_Endnote')
-        p.add_run(text)
-
-    def _add_record_section(self, doc, ns, record, record_index, img_quality, fig_counter):
-        """完整单条记录布局"""
-        rec_title = record.get('title', f'记录{record_index + 1}')
-        self._add_h2(doc, ns, f'第{record_index + 1}条记录：{rec_title}')
-
-        # 试验基础信息区块
-        self._add_field_info(doc, ns, '试验日期', record.get('date', ''))
-        self._add_field_info(doc, ns, '试验人员', record.get('personnel', ''))
-        self._add_field_info(doc, ns, '试验地点', record.get('location', ''))
-        self._add_field_info(doc, ns, '环境条件', record.get('conditions', ''))
-        self._add_field_info(doc, ns, '模板类型', record.get('template', ''))
-
-        # 试验内容
-        content = record.get('content', '').strip()
-        if content:
-            self._add_h3(doc, ns, '试验内容')
-            for line in content.split('\n'):
-                self._add_body(doc, ns, line)
-
-        # 标准化有序试验步骤（每一步包含自己的数据与截图）
-        steps = record.get('steps', [])
-        if steps:
-            self._add_h3(doc, ns, '试验步骤')
-            img_width = self._IMG_WIDTH_MAP.get(img_quality, Inches(5.0))
-            for i, step in enumerate(steps):
-                st = step.get('title', '').strip()
-                sd = step.get('desc', '').strip()
-                step_data = step.get('data', '').strip()
-                step_images = step.get('images', [])
-                if st or sd:
-                    self._add_step_item(doc, ns, i + 1, st, sd)
-                elif step_data or step_images:
-                    self._add_step_item(doc, ns, i + 1, '未命名步骤', '')
-
-                if step_data:
-                    self._add_h3(doc, ns, f'步骤{i + 1}数据记录')
-                    for line in step_data.split('\n'):
-                        if line.strip():
-                            self._add_body(doc, ns, line)
-
-                if step_images:
-                    self._add_h3(doc, ns, f'步骤{i + 1}截图附件')
-                    for img_item in step_images:
-                        if isinstance(img_item, str):
-                            img_path = img_item
-                            img_caption = ''
-                        elif isinstance(img_item, dict):
-                            img_path = img_item.get('path', '')
-                            img_caption = img_item.get('caption', '')
-                        else:
-                            continue
-                        if not (os.path.exists(img_path) and os.path.isfile(img_path)):
-                            continue
-                        try:
-                            doc.add_picture(img_path, width=img_width)
-                            last_p = doc.paragraphs[-1]
-                            last_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                            fig_counter[0] += 1
-                            caption_text = img_caption if img_caption else os.path.basename(img_path)
-                            self._add_image_caption(doc, ns, fig_counter[0], caption_text)
-                        except Exception as e:
-                            logger.warning(f'图片[{img_path}]插入失败: {e}')
-
-        # 兼容旧版记录：旧数据可能仍保存在记录级 data/images
-        legacy_data = record.get('data', '').strip()
-        if legacy_data:
-            self._add_h3(doc, ns, '未归属步骤数据记录')
-            for line in legacy_data.split('\n'):
-                if line.strip():
-                    self._add_body(doc, ns, line)
-
-        legacy_images = record.get('images', [])
-        if legacy_images:
-            self._add_h3(doc, ns, '未归属步骤截图附件')
-            img_width = self._IMG_WIDTH_MAP.get(img_quality, Inches(5.0))
-            for img_item in legacy_images:
-                if isinstance(img_item, str):
-                    img_path = img_item
-                    img_caption = ''
-                elif isinstance(img_item, dict):
-                    img_path = img_item.get('path', '')
-                    img_caption = img_item.get('caption', '')
-                else:
-                    continue
-                if not (os.path.exists(img_path) and os.path.isfile(img_path)):
-                    continue
-                try:
-                    doc.add_picture(img_path, width=img_width)
-                    last_p = doc.paragraphs[-1]
-                    last_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    fig_counter[0] += 1
-                    caption_text = img_caption if img_caption else os.path.basename(img_path)
-                    self._add_image_caption(doc, ns, fig_counter[0], caption_text)
-                except Exception as e:
-                    logger.warning(f'图片[{img_path}]插入失败: {e}')
-
-        # 试验结论与问题汇总
-        conclusion = record.get('conclusion', '').strip()
-        if conclusion:
-            self._add_h3(doc, ns, '结论与问题')
-            for line in conclusion.split('\n'):
-                if line.strip():
-                    self._add_body(doc, ns, line)
 
     # ---- 导出辅助 ----
 
@@ -1239,317 +1254,76 @@ class ExpRecorderPanel(QWidget):
         else:
             QMessageBox.information(self, '提示', '请先在左侧选择对应的项目/任务/记录')
 
-    def _export_to_word(self, level='record', pid=None, tid=None, rid=None):
-        """多级导出Word文档 - 重构版（全部调用命名样式，无零散硬编码）"""
-        if Document is None:
-            QMessageBox.warning(
-                self,
-                '缺少依赖',
-                '导出 Word 需要安装 python-docx。\n请执行：pip install python-docx'
-            )
-            return
-
-        # ---- 导出设置对话框 ----
-        dlg = QDialog(self)
-        dlg.setWindowTitle('导出设置')
-        dlg.setMinimumWidth(420)
-        dlg_layout = QFormLayout(dlg)
-
-        combo_style = QComboBox()
-        combo_style.addItems(['📄 标准正式（宋体/黑体/标准格式）', '🌿 简洁清爽（现代/留白）', '📦 紧凑密集（省纸/高密度）'])
-        dlg_layout.addRow('报告风格:', combo_style)
-
-        chk_cover = QCheckBox()
-        chk_cover.setChecked(True)
-        dlg_layout.addRow('包含封面:', chk_cover)
-
-        chk_page_num = QCheckBox()
-        chk_page_num.setChecked(True)
-        dlg_layout.addRow('包含页码:', chk_page_num)
-
-        chk_toc = QCheckBox()
-        chk_toc.setChecked(False)
-        dlg_layout.addRow('自动目录:', chk_toc)
-
-        combo_img = QComboBox()
-        combo_img.addItems(['高清', '标准', '压缩'])
-        dlg_layout.addRow('图片质量:', combo_img)
-
-        edit_watermark = QLineEdit()
-        edit_watermark.setPlaceholderText('不加水印留空')
-        dlg_layout.addRow('水印文字:', edit_watermark)
-
-        btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        btn_box.accepted.connect(dlg.accept)
-        btn_box.rejected.connect(dlg.reject)
-        dlg_layout.addRow(btn_box)
-
-        if dlg.exec_() != QDialog.Accepted:
-            return
-
-        style_name = combo_style.currentText()
-        include_cover = chk_cover.isChecked()
-        include_page_num = chk_page_num.isChecked()
-        include_toc = chk_toc.isChecked()
-        img_quality = combo_img.currentText()
-        watermark_text = edit_watermark.text().strip()
-
-        # 确定导出范围
-        if level == 'record':
-            if pid is None or tid is None or rid is None:
-                if not all([self.current_project_id, self.current_task_id, self.current_record_id]):
-                    QMessageBox.information(self, '提示', '没有正在编辑的记录')
-                    return
-                self._save_current_record()
-                pid = self.current_project_id
-                tid = self.current_task_id
-                rid = self.current_record_id
-            try:
-                recs_to_export = {rid: self.projects[pid]['tasks'][tid]['records'][rid]}
-            except KeyError:
-                QMessageBox.warning(self, '错误', '无法获取记录数据')
-                return
-
-        elif level == 'task':
-            if pid is None or tid is None:
-                current = self.tree_projects.currentItem()
-                if current:
-                    data = current.data(Qt.UserRole)
-                    if data and data[0] == 'task':
-                        _, pid, tid = data
-            if not pid or not tid:
-                QMessageBox.information(self, '提示', '请先在左侧选中一个任务')
-                return
-            try:
-                recs_to_export = self.projects[pid]['tasks'][tid].get('records', {})
-            except KeyError:
-                QMessageBox.warning(self, '错误', '无法获取任务数据')
-                return
-            if not recs_to_export:
-                QMessageBox.information(self, '提示', '该任务下没有记录可导出')
-                return
-
-        elif level == 'project':
-            if pid is None:
-                current = self.tree_projects.currentItem()
-                if current:
-                    data = current.data(Qt.UserRole)
-                    if data and data[0] == 'project':
-                        pid = data[1]
-            if not pid:
-                QMessageBox.information(self, '提示', '请先在左侧选中一个项目')
-                return
-            recs_to_export = {}
-            try:
-                for t_id in self.projects[pid].get('tasks', {}):
-                    for r_id, rec in self.projects[pid]['tasks'][t_id].get('records', {}).items():
-                        recs_to_export[(t_id, r_id)] = rec
-            except KeyError:
-                pass
-            if not recs_to_export:
-                QMessageBox.information(self, '提示', '该项目下没有记录可导出')
-                return
-
-        # 默认文件名
-        if level == 'record':
-            first_rec = list(recs_to_export.values())[0]
-            default_name = first_rec.get('title', '试验记录').replace('/', '_').replace('\\', '_')
-            default_name = f'{default_name}.docx'
-        elif level == 'task':
-            task_name = self.projects[pid]['tasks'][tid].get('name', '任务')
-            default_name = f'{task_name}_汇总.docx'
-        else:
-            proj_name = self.projects[pid].get('name', '项目')
-            default_name = f'{proj_name}_完整报告.docx'
-
-        filepath, _ = QFileDialog.getSaveFileName(
-            self, '导出Word文档', os.path.join(DATA_DIR, default_name), 'Word文档 (*.docx)')
-        if not filepath:
-            return
-
-        try:
-            # ---- 初始化文档 ----
-            doc = Document()
-
-            # ---- 页面统一设置 ----
-            sec = doc.sections[0]
-            sec.top_margin = self._REPORT_STYLES['page_top_margin']
-            sec.bottom_margin = self._REPORT_STYLES['page_bottom_margin']
-            sec.left_margin = self._REPORT_STYLES['page_left_margin']
-            sec.right_margin = self._REPORT_STYLES['page_right_margin']
-
-            # ---- 创建内置命名样式 ----
-            ns = self._create_named_styles(doc)
-
-            # ---- 封面标题文字 ----
-            if level == 'project':
-                proj_name = self.projects[pid].get('name', '项目')
-                title_text = f'{proj_name} - 完整试验报告'
-            elif level == 'task':
-                task_name = self.projects[pid]['tasks'][tid].get('name', '任务')
-                title_text = f'{task_name} - 汇总报告'
-            else:
-                first_rec = list(recs_to_export.values())[0]
-                title_text = first_rec.get('title', '试验记录')
-
-            # ---- 封面 ----
-            self._add_cover_page(doc, ns, title_text, include_cover)
-
-            # ---- 目录（可选） ----
-            if include_toc:
-                p = doc.add_paragraph()
-                p.style = doc.styles[ns['CoverTitle']]
-                run = p.add_run('目录')
-                run.font.size = Pt(14)
-                # Word 自动目录字段
-                fldChar1 = OxmlElement('w:fldChar')
-                fldChar1.set(qn('w:fldCharType'), 'begin')
-                instrText = OxmlElement('w:instrText')
-                instrText.text = ' TOC \\o "1-3" \\h \\z \\u '
-                fldChar2 = OxmlElement('w:fldChar')
-                fldChar2.set(qn('w:fldCharType'), 'separate')
-                fldChar3 = OxmlElement('w:fldChar')
-                fldChar3.set(qn('w:fldCharType'), 'end')
-                run2 = p.add_run()
-                run2._element.append(fldChar1)
-                run2._element.append(instrText)
-                run2._element.append(fldChar2)
-                run2._element.append(fldChar3)
-                doc.add_page_break()
-
-            # ---- 写入所有记录 ----
-            rec_idx = 0
-            fig_counter = [0]  # 全局图号计数器（跨记录连续编号）
-            for key, rec in recs_to_export.items():
-                if rec_idx > 0:
-                    doc.add_page_break()
-                self._add_record_section(doc, ns, rec, rec_idx, img_quality, fig_counter)
-                rec_idx += 1
-
-            # ---- 生成页眉（项目/任务名称，宋体小五中度灰居中） ----
-            header_text = ''
-            if level == 'project':
-                header_text = self.projects[pid].get('name', '')
-            elif level == 'task':
-                header_text = self.projects[pid]['tasks'][tid].get('name', '')
-            else:
-                first_rec = list(recs_to_export.values())[0]
-                header_text = first_rec.get('title', '')
-            if header_text:
-                header = sec.header
-                hp = header.paragraphs[0]
-                hp.text = header_text
-                hp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                for run in hp.runs:
-                    run.font.size = self._REPORT_STYLES['header_size']
-                    run.font.color.rgb = self._REPORT_STYLES['header_color']
-                    self._set_cn_font(run, self._REPORT_STYLES['header_font'])
-
-            # ---- 页码（页脚，第 X 页 共 Y 页） ----
-            if include_page_num:
-                footer = sec.footer
-                fp = footer.paragraphs[0]
-                fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                run = fp.add_run('第 ')
-                run.font.size = self._REPORT_STYLES['footer_size']
-                run.font.color.rgb = self._REPORT_STYLES['footer_color']
-                self._set_cn_font(run, self._REPORT_STYLES['footer_font'])
-
-                # PAGE 域
-                run2 = fp.add_run()
-                fldChar1 = OxmlElement('w:fldChar')
-                fldChar1.set(qn('w:fldCharType'), 'begin')
-                instrText = OxmlElement('w:instrText')
-                instrText.text = ' PAGE '
-                fldChar2 = OxmlElement('w:fldChar')
-                fldChar2.set(qn('w:fldCharType'), 'separate')
-                fldChar3 = OxmlElement('w:fldChar')
-                fldChar3.set(qn('w:fldCharType'), 'end')
-                run2._element.append(fldChar1)
-                run2._element.append(instrText)
-                run2._element.append(fldChar2)
-                run2._element.append(fldChar3)
-
-                run3 = fp.add_run(' 页 共 ')
-                run3.font.size = self._REPORT_STYLES['footer_size']
-                run3.font.color.rgb = self._REPORT_STYLES['footer_color']
-                self._set_cn_font(run3, self._REPORT_STYLES['footer_font'])
-
-                run4 = fp.add_run()
-                fldChar1b = OxmlElement('w:fldChar')
-                fldChar1b.set(qn('w:fldCharType'), 'begin')
-                instrText2 = OxmlElement('w:instrText')
-                instrText2.text = ' NUMPAGES '
-                fldChar2b = OxmlElement('w:fldChar')
-                fldChar2b.set(qn('w:fldCharType'), 'separate')
-                fldChar3b = OxmlElement('w:fldChar')
-                fldChar3b.set(qn('w:fldCharType'), 'end')
-                run4._element.append(fldChar1b)
-                run4._element.append(instrText2)
-                run4._element.append(fldChar2b)
-                run4._element.append(fldChar3b)
-
-            # ---- 水印（可选，浅灰色底层） ----
-            if watermark_text:
-                for p in doc.paragraphs:
-                    for run in p.runs:
-                        if run.text.strip():
-                            run.font.color.rgb = self._REPORT_STYLES['watermark_color']
-
-            # ---- 报告尾注 ----
-            doc.add_paragraph()
-            total_records = len(recs_to_export)
-            now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
-            self._add_endnote(doc, ns, f'生成工具：试验记录助手 | 总记录数：{total_records} 条 | 导出时间：{now_str}')
-            self._add_endnote(doc, ns, '— 本报告由「试验记录助手」自动生成 —')
-
-            # ---- 保存 ----
-            doc.save(filepath)
-            logger.info(f'Word导出成功 [{style_name}]: {filepath}')
-            QMessageBox.information(self, '导出成功', f'Word文档已保存到:\n{filepath}')
-
-        except Exception as e:
-            logger.error(f'Word导出失败: {e}')
-            QMessageBox.critical(self, '导出失败', f'导出Word文档时发生错误:\n{str(e)}')
 
     # ==================== 数据持久化 ====================
 
     def _save_data(self):
         """保存数据到本地JSON文件（临时文件 + 原子替换）"""
+        if self.__dict__.get('_data_load_blocked', False):
+            raise RuntimeError('试验数据文件尚未成功隔离，禁止覆盖')
+        try:
+            projects = _normalize_projects_payload(self.projects)
+        except ValueError as exc:
+            logger.error('试验数据 Schema 校验失败: %s', exc)
+            raise
+        payload = {
+            'schema_version': EXPERIMENTS_SCHEMA_VERSION,
+            'projects': projects,
+        }
         filepath = os.path.join(DATA_DIR, 'experiments.json')
         temporary_path = filepath + '.tmp'
         try:
+            backup_status = _backup_valid_json(
+                filepath, _normalize_projects_payload
+            )
+            if backup_status is False:
+                if (
+                    _quarantine_corrupt_file(filepath) is None
+                    and os.path.lexists(filepath)
+                ):
+                    self._data_load_blocked = True
+                    raise RuntimeError('无法隔离损坏的试验数据文件')
             os.makedirs(DATA_DIR, exist_ok=True)
             with open(temporary_path, 'w', encoding='utf-8') as f:
-                json.dump(self.projects, f, ensure_ascii=False, indent=2)
+                json.dump(payload, f, ensure_ascii=False, indent=2)
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(temporary_path, filepath)
         except Exception as e:
-            logger.error(f'保存数据失败: {e}')
+            logger.error(f'保存数据失败: {safe_exception_message(e)}')
             if os.path.exists(temporary_path):
                 try:
                     os.remove(temporary_path)
                 except OSError:
                     pass
+            if isinstance(e, RuntimeError):
+                raise
 
     def _load_data(self):
-        """从本地JSON文件加载数据；失败时保留当前内存数据"""
+        """从本地JSON文件加载数据；失败时隔离损坏文件并保留内存数据"""
         filepath = os.path.join(DATA_DIR, 'experiments.json')
-        if os.path.exists(filepath):
+        if os.path.lexists(filepath):
             try:
-                with open(filepath, 'r', encoding='utf-8') as f:
-                    payload = json.load(f)
-                if not isinstance(payload, dict):
-                    raise ValueError('试验数据根节点必须是 JSON 对象')
-                self.projects = payload
-                logger.info(f'已加载试验数据 ({len(self.projects)} 个项目)')
-            except Exception as e:
-                logger.error(f'加载数据失败，已保留当前内存数据: {e}')
-                if not isinstance(getattr(self, 'projects', None), dict):
+                projects = _read_json_with_limits(
+                    filepath, _normalize_projects_payload
+                )
+            except Exception as exc:
+                quarantined = _quarantine_corrupt_file(filepath)
+                blocked = quarantined is None and os.path.lexists(filepath)
+                self._data_load_blocked = blocked
+                logger.error(
+                    '加载试验数据失败（%s），已保留当前内存数据',
+                    type(exc).__name__,
+                )
+                if not isinstance(self.__dict__.get('projects'), dict):
                     self.projects = {}
+            else:
+                self._data_load_blocked = False
+                self.projects = projects
+                logger.info(f'已加载试验数据 ({len(self.projects)} 个项目)')
         else:
-            if not isinstance(getattr(self, 'projects', None), dict):
+            self._data_load_blocked = False
+            if not isinstance(self.__dict__.get('projects'), dict):
                 self.projects = {}
 
     def statusBar(self):

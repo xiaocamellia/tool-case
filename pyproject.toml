@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "portable-radar-toolbox"
+version = "1.0.0"
+description = "Portable Radar Toolbox"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "PyQt5>=5.15,<5.16",
+    "matplotlib>=3.8,<4",
+    "numpy>=1.26,<3",
+    "pandas>=2.2,<3",
+    "scipy>=1.11,<2",
+    "openpyxl>=3.1,<4",
+    "python-docx>=1.1,<1.2",
+    "xlrd>=2.0.1,<3",
+]
+
+[project.scripts]
+portable-radar-toolbox = "radar_tool.run:main"
+
+[tool.setuptools.packages.find]
+include = ["radar_tool*"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+extend-select = ["E9", "F63", "F7", "F82"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+check_untyped_defs = false
+warn_unused_ignores = false

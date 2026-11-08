@@ -7,9 +7,11 @@
 
 import os
 import logging
+import traceback
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 
+from .errors import sanitize_sensitive_text
 from .runtime_paths import get_user_data_dir, get_user_data_root
 
 # 日志目录
@@ -21,6 +23,39 @@ LOG_FILE = os.path.join(LOG_DIR, f"运行日志_{datetime.now().strftime('%Y%m%d
 # 日志格式
 _LOG_FORMAT = '%(asctime)s | %(levelname)-7s | %(name)-15s | %(message)s'
 _DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
+
+
+class SafeFormatter(logging.Formatter):
+    """日志格式化器，隐藏异常中的敏感路径和原始数据。"""
+
+    def format(self, record):
+        original_message = record.msg
+        original_args = record.args
+        original_exc_info = record.exc_info
+        original_exc_text = record.exc_text
+        try:
+            message = sanitize_sensitive_text(record.getMessage())
+            if record.exc_info:
+                stack = ''.join(
+                    traceback.format_exception(
+                        record.exc_info[0],
+                        record.exc_info[1],
+                        record.exc_info[2],
+                    )
+                )
+                message = message + '\n' + sanitize_sensitive_text(
+                    stack, max_length=1_000_000
+                )
+            record.msg = message
+            record.args = ()
+            record.exc_info = None
+            record.exc_text = None
+            return super().format(record)
+        finally:
+            record.msg = original_message
+            record.args = original_args
+            record.exc_info = original_exc_info
+            record.exc_text = original_exc_text
 
 # 缓存已创建的 logger
 _loggers = {}
@@ -35,7 +70,10 @@ def _ensure_log_dir():
             LOG_DIR, f"运行日志_{datetime.now().strftime('%Y%m%d')}.log"
         )
     except Exception as e:
-        print(f"[日志] 无法创建日志目录 '{LOG_DIR}': {e}")
+        print(
+        f"[日志] 无法创建日志目录 '{os.path.basename(LOG_DIR)}': "
+        f"{sanitize_sensitive_text(e)}"
+    )
 
 
 def _setup_root_logger():
@@ -50,7 +88,7 @@ def _setup_root_logger():
     root_logger.setLevel(logging.DEBUG)
 
     # 格式器
-    formatter = logging.Formatter(_LOG_FORMAT, datefmt=_DATE_FORMAT)
+    formatter = SafeFormatter(_LOG_FORMAT, datefmt=_DATE_FORMAT)
 
     # ——— 文件 Handler (记录全部 DEBUG+) ———
     try:
@@ -64,7 +102,10 @@ def _setup_root_logger():
         fh.setFormatter(formatter)
         root_logger.addHandler(fh)
     except Exception as e:
-        print(f"[日志] 无法创建日志文件 '{LOG_FILE}': {e}")
+        print(
+        f"[日志] 无法创建日志文件 '{os.path.basename(LOG_FILE)}': "
+        f"{sanitize_sensitive_text(e)}"
+    )
 
     # ——— 控制台 Handler (只显示 INFO+) ———
     ch = logging.StreamHandler()

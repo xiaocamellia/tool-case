@@ -6,7 +6,7 @@ import numpy as np
 
 
 def _as_vector(values, name: str) -> np.ndarray:
-    vector = np.asarray(values, dtype=float).reshape(-1)
+    vector: np.ndarray = np.asarray(values, dtype=float).reshape(-1)
     if vector.size == 0 or not np.all(np.isfinite(vector)):
         raise ValueError(f'{name} 为空或包含无效数值')
     return vector
@@ -34,7 +34,9 @@ def simulate_angles(
 
     rho_obj = float(fixed_params['rho_obj'])
     xx_r4 = float(fixed_params['xx_r4'])
-    matrix = np.asarray(fixed_params['matrixZT2ANT'], dtype=float)
+    matrix: np.ndarray = np.asarray(
+        fixed_params['matrixZT2ANT'], dtype=float
+    )
     if rho_obj <= 0:
         raise ValueError('rho_obj 必须大于 0')
     if matrix.shape != (3, 3) or not np.all(np.isfinite(matrix)):

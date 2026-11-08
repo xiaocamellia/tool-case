@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
@@ -69,6 +71,47 @@ class CalibrationPanelTests(unittest.TestCase):
             self.assertTrue(panel.btn_export.isEnabled())
             self.assertTrue(panel.btn_apply_result.isEnabled())
             self.assertEqual(panel.metrics_table.rowCount(), 8)
+            export_path = os.path.join(directory, 'calibration_export.json')
+            with patch(
+                'radar_tool.calibration_panel.QFileDialog.getSaveFileName',
+                return_value=(export_path, 'JSON 结果 (*.json)'),
+            ), patch(
+                'radar_tool.calibration_panel.QMessageBox.information'
+            ):
+                panel._export_result()
+
+            batch_directory = os.path.splitext(export_path)[0]
+            expected_files = {
+                'calibration_export.json',
+                'calibration_export_样本明细.csv',
+                'calibration_export_误差曲线.png',
+                '00_导出元数据.json',
+            }
+            self.assertTrue(
+                expected_files.issubset(set(os.listdir(batch_directory)))
+            )
+            self.assertFalse([
+                name for name in os.listdir(directory)
+                if name.startswith('.calibration_export.tmp-')
+            ])
+            with open(
+                os.path.join(batch_directory, 'calibration_export.json'),
+                encoding='utf-8',
+            ) as handle:
+                exported = json.load(handle)
+            with open(
+                os.path.join(batch_directory, '00_导出元数据.json'),
+                encoding='utf-8',
+            ) as handle:
+                metadata = json.load(handle)
+            self.assertEqual(exported['export_metadata'], metadata)
+            self.assertEqual(metadata['version'], '1.0.0')
+            self.assertEqual(metadata['schema_version'], 1)
+            self.assertIn('generated_at', metadata)
+            self.assertEqual(
+                metadata['input_summary']['source_file'], 'MeasData.csv'
+            )
+            self.assertIn('optimized_params', metadata['parameters'])
             panel.close()
             self.app.processEvents()
 

@@ -18,6 +18,8 @@ def is_frozen() -> bool:
 def get_bundle_root() -> str:
     if hasattr(sys, "_MEIPASS"):
         return sys._MEIPASS
+    if is_frozen():
+        return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -41,7 +43,7 @@ def ensure_dir(path: str) -> str:
 
 def _migrate_legacy_user_data(parts: tuple[str, ...], target: str) -> None:
     """Move first-run data from the source tree into the ignored runtime folder."""
-    legacy = os.path.join(get_launcher_dir(), *parts)
+    legacy = _safe_join(get_launcher_dir(), *parts)
     if os.path.abspath(legacy) == os.path.abspath(target):
         return
     if not os.path.exists(legacy) or os.path.exists(target):
@@ -61,12 +63,40 @@ def migrate_legacy_user_data() -> None:
         _migrate_legacy_user_data((name,), target)
 
 
+def _validate_path_parts(parts: tuple[str, ...]) -> tuple[str, ...]:
+    normalized = tuple(str(part) for part in parts)
+    for part in normalized:
+        if not part or part in {".", ".."}:
+            raise ValueError("path component must be a non-empty relative name")
+        if "\x00" in part or "/" in part or "\\" in part:
+            raise ValueError("path component must not contain separators")
+        if os.path.isabs(part) or os.path.splitdrive(part)[0]:
+            raise ValueError("path component must be relative")
+    return normalized
+
+
+def _safe_join(root: str, *parts: str) -> str:
+    normalized_parts = _validate_path_parts(parts)
+    root_path = os.path.abspath(root)
+    target = os.path.abspath(os.path.join(root_path, *normalized_parts))
+    root_real = os.path.realpath(root_path)
+    target_real = os.path.realpath(target)
+    if os.path.commonpath([root_real, target_real]) != root_real:
+        raise ValueError("path escapes its managed root")
+    return target
+
+
 def get_user_data_dir(*parts: str) -> str:
-    normalized_parts = tuple(str(part) for part in parts)
-    target = os.path.join(get_user_data_root(), *normalized_parts)
+    normalized_parts = _validate_path_parts(tuple(parts))
+    target = _safe_join(get_user_data_root(), *normalized_parts)
     _migrate_legacy_user_data(normalized_parts, target)
-    return ensure_dir(target)
+    created = ensure_dir(target)
+    if os.path.commonpath(
+        [os.path.realpath(get_user_data_root()), os.path.realpath(created)]
+    ) != os.path.realpath(get_user_data_root()):
+        raise ValueError("path escapes its managed root")
+    return created
 
 
 def get_resource_path(*parts: str) -> str:
-    return os.path.join(get_bundle_root(), *parts)
+    return _safe_join(get_bundle_root(), *parts)

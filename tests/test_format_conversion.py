@@ -6,9 +6,12 @@ import os
 import struct
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from radar_tool.format_conversion import (
+    FRAME_SIZE,
     FormatConversionError,
+    load_tr_amplitude_phase_bin,
     build_tr_amplitude_phase_bin,
     decode_tr_amplitude_phase,
     encode_tr_amplitude_phase,
@@ -112,6 +115,25 @@ class TrAmplitudePhaseProtocolTests(unittest.TestCase):
         bad_checksum[-1] ^= 0x01
         with self.assertRaisesRegex(FormatConversionError, '累加和错误'):
             decode_tr_amplitude_phase(bytes(bad_checksum))
+
+    def test_file_loaders_reject_size_and_frame_limits_without_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            text_path = os.path.join(directory, 'oversized.txt')
+            with open(text_path, 'wb') as output:
+                output.write(b'0 0 0\n' * 20)
+            with patch('radar_tool.format_conversion.MAX_FILE_SIZE', 10):
+                with self.assertRaisesRegex(
+                    FormatConversionError, r'大小超限.*允许 0~10'):
+                    load_tr_amplitude_phase_txt(text_path)
+
+            bin_path = os.path.join(directory, 'oversized.bin')
+            with open(bin_path, 'wb') as output:
+                output.write(bytes(FRAME_SIZE * 25))
+            with self.assertRaisesRegex(
+                FormatConversionError,
+                rf'大小超限.*允许 0~{FRAME_SIZE * 24}',
+            ):
+                load_tr_amplitude_phase_bin(bin_path)
 
     def test_file_builder_returns_no_side_outputs(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -1,0 +1,9 @@
+{
+  "application_version": "1.0.0",
+  "python_version": "3.12.7",
+  "python_implementation": "CPython",
+  "python_architecture": "64bit",
+  "nuitka_version": "4.1.3",
+  "msvc_version": "14.3",
+  "platform": "Windows x86_64"
+}

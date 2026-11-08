@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import os
+import threading
+import time
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import QObject, Qt, QThread, QTimer, pyqtSignal
 from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import (
     QAbstractItemView,
@@ -27,7 +29,9 @@ from PyQt5.QtWidgets import (
 )
 
 from .format_conversion import (
+    FormatConversionCancelled,
     FormatConversionError,
+    FormatConversionTimeout,
     TrConversionResult,
     build_tr_amplitude_phase_bin,
     load_tr_amplitude_phase_bin,
@@ -35,11 +39,73 @@ from .format_conversion import (
     write_bytes_atomic,
     write_text_atomic,
 )
+from .errors import ExportError, safe_exception_message
+from .background_tasks import (
+    ensure_task_can_start, register_background_task, task_result_is_current,
+)
 from .logger import get_logger
 from .ui_theme import set_button_icon, style_primary_button
 
 
 logger = get_logger('format_conversion_panel')
+
+
+class FormatConversionWorker(QObject):
+    """Run one bounded format parse outside the Qt UI thread."""
+
+    finished = pyqtSignal(object)
+    failed = pyqtSignal(str)
+    cancelled = pyqtSignal(str)
+    progress = pyqtSignal(int, str)
+
+    def __init__(self, filepath, txt_to_bin, timeout_seconds):
+        super().__init__()
+        self._filepath = filepath
+        self._txt_to_bin = txt_to_bin
+        self._timeout_seconds = timeout_seconds
+        self._cancel_event = threading.Event()
+        self._timed_out = False
+        self._deadline = time.monotonic() + timeout_seconds
+
+    def cancel(self, timed_out=False):
+        self._cancel_event.set()
+        self._timed_out = timed_out
+
+    def run(self):
+        try:
+            self.progress.emit(5, '开始解析')
+            if self._cancel_event.is_set():
+                raise FormatConversionCancelled('解析已取消')
+            if self._txt_to_bin:
+                result = build_tr_amplitude_phase_bin(
+                    self._filepath,
+                    self._cancel_event,
+                    self._deadline,
+                    self._timeout_seconds,
+                )
+            else:
+                result = load_tr_amplitude_phase_bin(
+                    self._filepath,
+                    self._cancel_event,
+                    self._deadline,
+                    self._timeout_seconds,
+                )
+        except FormatConversionCancelled as exc:
+            if self._timed_out:
+                self.failed.emit(
+                    f'解析超时：允许 0~{self._timeout_seconds:g} 秒')
+            else:
+                self.cancelled.emit(safe_exception_message(exc))
+        except FormatConversionTimeout as exc:
+            self.failed.emit(safe_exception_message(exc))
+        except (FormatConversionError, ExportError) as exc:
+            self.failed.emit(safe_exception_message(exc))
+        except Exception:
+            logger.exception('格式解析后台任务失败')
+            self.failed.emit('解析失败：发生未预期错误')
+        else:
+            self.progress.emit(100, '解析完成')
+            self.finished.emit(result)
 
 
 class FormatConversionPanel(QWidget):
@@ -52,6 +118,14 @@ class FormatConversionPanel(QWidget):
         super().__init__(parent)
         self.preview_result = None  # type: TrConversionResult | None
         self._preview_source_path = ''
+        self._parse_thread = None
+        self._parse_worker = None
+        self._timeout_timer = None
+        self._preview_in_progress = False
+        self._pending_convert = False
+        self._parse_task_name = ''
+        self._parse_task_version = 0
+        self.parse_timeout_seconds = 30.0
         self._init_ui()
         self._update_direction()
         logger.info('格式转换面板已创建')
@@ -141,6 +215,11 @@ class FormatConversionPanel(QWidget):
         style_primary_button(self.convert_button)
         self.convert_button.clicked.connect(self._convert)
         button_row.addWidget(self.convert_button, 1)
+        self.cancel_button = QPushButton('取消')
+        self.cancel_button.setToolTip('取消正在执行的解析任务')
+        self.cancel_button.setEnabled(False)
+        self.cancel_button.clicked.connect(self._cancel_parse)
+        button_row.addWidget(self.cancel_button)
         grid.addLayout(button_row, 3, 0, 1, 3)
         layout.addWidget(workflow)
 
@@ -219,6 +298,7 @@ class FormatConversionPanel(QWidget):
     def _set_status(self, text, state):
         colors = {
             'idle': ('#f1f5f9', '#475569', '#cbd5e1'),
+            'running': ('#eff6ff', '#1d4ed8', '#bfdbfe'),
             'success': ('#ecfdf5', '#166534', '#86efac'),
             'error': ('#fef2f2', '#b91c1c', '#fca5a5'),
         }
@@ -293,33 +373,171 @@ class FormatConversionPanel(QWidget):
         self.log_text.clear()
         self._set_status('等待选择文件', 'idle')
 
-    def _load_current_source(self):
+    def closeEvent(self, event):
+        self._cancel_parse()
+        if self._parse_thread is not None:
+            self._parse_thread.quit()
+            self._parse_thread.wait(5000)
+        super().closeEvent(event)
+
+    def _set_parse_controls(self, running):
+        self.preview_button.setEnabled(not running)
+        self.convert_button.setEnabled(not running)
+        self.cancel_button.setEnabled(running)
+        self.source_button.setEnabled(not running)
+        self.direction_combo.setEnabled(not running)
+
+    def _start_parse(self, pending_convert=False):
         filepath = self.source_edit.text().strip()
         if not filepath:
-            raise FormatConversionError('请先选择输入文件')
-        if not os.path.isfile(filepath):
-            raise FormatConversionError('输入文件不存在')
-        if self.direction_combo.currentIndex() == self.TXT_TO_BIN:
-            return build_tr_amplitude_phase_bin(filepath)
-        return load_tr_amplitude_phase_bin(filepath)
-
-    def _preview(self):
-        try:
-            result = self._load_current_source()
-        except FormatConversionError as exc:
-            self.preview_result = None
-            self._preview_source_path = ''
-            self._set_status('预检失败', 'error')
-            self.log_text.setPlainText(str(exc))
-            self.frame_table.setRowCount(0)
-            self.data_table.setRowCount(0)
-            logger.warning('格式预检失败: %s', exc)
+            self._show_parse_failure('请先选择输入文件')
             return False
+        if not os.path.isfile(filepath):
+            self._show_parse_failure('输入文件不存在')
+            return False
+        if self._preview_in_progress:
+            self._pending_convert = self._pending_convert or pending_convert
+            return True
+        if self._parse_thread is not None:
+            if not self._parse_thread.isFinished():
+                self._parse_thread.quit()
+                self._parse_thread.wait(100)
+            if not self._parse_thread.isFinished():
+                self._show_parse_failure('上一个解析任务尚未结束，请稍后重试')
+                return False
+            self._parse_worker = None
+            self._parse_thread = None
+
+        task_name = f'格式解析：{os.path.basename(filepath)}'
+        try:
+            ensure_task_can_start(self, task_name)
+        except ValueError as exc:
+            self._show_parse_failure(str(exc))
+            return False
+        self._pending_convert = pending_convert
+        self._parse_task_name = task_name
+        self._preview_in_progress = True
+        self._set_parse_controls(True)
+        self._set_status('解析中', 'running')
+        self.log_text.setPlainText('正在后台解析输入文件，可随时取消。')
+
+        txt_to_bin = self.direction_combo.currentIndex() == self.TXT_TO_BIN
+        self._parse_thread = QThread(self)
+        self._parse_worker = FormatConversionWorker(
+            filepath, txt_to_bin, self.parse_timeout_seconds)
+        self._parse_worker.moveToThread(self._parse_thread)
+        self._parse_thread.started.connect(self._parse_worker.run)
+        self._parse_worker.finished.connect(self._on_parse_finished)
+        self._parse_worker.failed.connect(self._on_parse_failed)
+        self._parse_worker.cancelled.connect(self._on_parse_cancelled)
+        self._parse_worker.finished.connect(self._parse_thread.quit)
+        self._parse_worker.failed.connect(self._parse_thread.quit)
+        self._parse_worker.cancelled.connect(self._parse_thread.quit)
+        self._parse_thread.finished.connect(self._parse_worker.deleteLater)
+        self._parse_thread.finished.connect(self._parse_thread.deleteLater)
+        self._parse_thread.finished.connect(
+            lambda thread=self._parse_thread: self._on_parse_thread_finished(thread))
+
+        self._timeout_timer = QTimer(self)
+        self._timeout_timer.setSingleShot(True)
+        self._timeout_timer.timeout.connect(self._on_parse_timeout)
+        self._timeout_timer.start(max(1, int(self.parse_timeout_seconds * 1000)))
+        self._parse_task_version = register_background_task(
+            self,
+            task_name,
+            self._parse_thread,
+            self._parse_worker,
+            self._parse_worker.cancel,
+        )
+        self._parse_thread.start()
+        return True
+
+    def _show_parse_failure(self, message):
+        self.preview_result = None
+        self._preview_source_path = ''
+        self._preview_in_progress = False
+        self._pending_convert = False
+        self._set_parse_controls(False)
+        self._set_status('预检失败', 'error')
+        self.log_text.setPlainText(message)
+        self.frame_table.setRowCount(0)
+        self.data_table.setRowCount(0)
+        logger.warning('格式预检失败: %s', message)
+
+    def _finish_parse_job(self):
+        if self._timeout_timer is not None:
+            self._timeout_timer.stop()
+            self._timeout_timer = None
+        self._preview_in_progress = False
+        self._set_parse_controls(False)
+
+    def _on_parse_thread_finished(self, thread):
+        if thread is self._parse_thread:
+            self._parse_worker = None
+            self._parse_thread = None
+
+    def _on_parse_finished(self, result):
+        if (
+            not self._preview_in_progress
+            or not task_result_is_current(
+                self, self._parse_task_name, self._parse_task_version
+            )
+        ):
+            return
         self.preview_result = result
         self._preview_source_path = self.source_edit.text().strip()
         self._render_result(result)
         self._set_status('预检通过', 'success')
-        return True
+        pending_convert = self._pending_convert
+        self._pending_convert = False
+        self._finish_parse_job()
+        if pending_convert:
+            self._perform_convert()
+
+    def _on_parse_failed(self, message):
+        if (
+            not self._preview_in_progress
+            or not task_result_is_current(
+                self, self._parse_task_name, self._parse_task_version
+            )
+        ):
+            return
+        self._pending_convert = False
+        self._finish_parse_job()
+        self._show_parse_failure(message)
+
+    def _on_parse_cancelled(self, message):
+        if (
+            not self._preview_in_progress
+            or not task_result_is_current(
+                self, self._parse_task_name, self._parse_task_version
+            )
+        ):
+            return
+        self._pending_convert = False
+        self._finish_parse_job()
+        self.preview_result = None
+        self._preview_source_path = ''
+        self._set_status('已取消', 'idle')
+        self.log_text.setPlainText(message)
+        self.frame_table.setRowCount(0)
+        self.data_table.setRowCount(0)
+        logger.info('格式解析已取消')
+
+    def _on_parse_timeout(self):
+        if self._parse_worker is not None:
+            self._parse_worker.cancel(timed_out=True)
+
+    def _cancel_parse(self):
+        if self._parse_worker is not None:
+            self._parse_worker.cancel()
+            self._set_status('取消中', 'running')
+            self.log_text.setPlainText('正在取消解析任务……')
+
+    def _preview(self):
+        if self._preview_in_progress:
+            return True
+        return self._start_parse(pending_convert=False)
 
     def _render_result(self, result):
         values = (
@@ -362,9 +580,6 @@ class FormatConversionPanel(QWidget):
         )
 
     def _convert(self):
-        if not self._preview():
-            QMessageBox.warning(self, '无法转换', self.log_text.toPlainText())
-            return False
         target = self.target_edit.text().strip()
         if not target:
             QMessageBox.warning(self, '缺少输出文件', '请选择输出文件。')
@@ -383,6 +598,25 @@ class FormatConversionPanel(QWidget):
             )
             if answer != QMessageBox.Yes:
                 return False
+
+        source_current = (
+            self.preview_result is not None
+            and os.path.normcase(os.path.abspath(self._preview_source_path))
+            == os.path.normcase(os.path.abspath(source))
+        )
+        if source_current and not self._preview_in_progress:
+            return self._perform_convert()
+        if self._preview_in_progress:
+            self._pending_convert = True
+            self.log_text.append('\n解析完成后将自动执行转换。')
+            return True
+        return self._start_parse(pending_convert=True)
+
+    def _perform_convert(self):
+        target = self.target_edit.text().strip()
+        if not target or self.preview_result is None:
+            QMessageBox.warning(self, '无法转换', '预检结果已失效，请重新预检。')
+            return False
         try:
             if self.direction_combo.currentIndex() == self.TXT_TO_BIN:
                 write_bytes_atomic(target, self.preview_result.data)
@@ -390,8 +624,8 @@ class FormatConversionPanel(QWidget):
                 write_text_atomic(target, rows_to_tr_text(self.preview_result.rows))
         except FormatConversionError as exc:
             self._set_status('写入失败', 'error')
-            self.log_text.append(f'\n写入失败: {exc}')
-            QMessageBox.critical(self, '转换失败', str(exc))
+            self.log_text.append(f'\n写入失败: {safe_exception_message(exc)}')
+            QMessageBox.critical(self, '转换失败', safe_exception_message(exc))
             logger.exception('格式转换写入失败')
             return False
 
@@ -401,7 +635,8 @@ class FormatConversionPanel(QWidget):
         QMessageBox.information(
             self,
             '转换完成',
-            f'已生成：\n{target}\n\n{self.preview_result.block_count} 帧，'
+            f'已生成：\n{os.path.basename(target)}\n\n'
+            f'{self.preview_result.block_count} 帧，'
             f'{len(self.preview_result.data)} 字节。',
         )
         return True

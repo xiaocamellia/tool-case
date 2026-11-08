@@ -14,7 +14,10 @@ tools/
 var/
 .mypy_cache/
 .pytest_cache/
+.pytest-temp-functional/
+.ruff_cache/
 .matplotlib_cache/
+.pip-cache/
 
 # ========== Python ==========
 __pycache__/
@@ -25,8 +28,6 @@ __pycache__/
 *.egg
 dist/
 build/
-*.spec
-!packaging/*.spec
 
 # ========== 日志/缓存 ==========
 日志/
@@ -40,5 +41,9 @@ build/
 # ========== 环境 ==========
 .env
 .venv/
+.venv-build/
 env/
 venv/
+
+# Local scratch files
+tmp*.json

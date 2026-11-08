@@ -7,7 +7,7 @@ import numpy as np
 
 def calculate_error_metrics(errors) -> dict[str, float]:
     """Return the core error statistics required by the calibration report."""
-    values = np.asarray(errors, dtype=float).reshape(-1)
+    values: np.ndarray = np.asarray(errors, dtype=float).reshape(-1)
     if values.size == 0 or not np.all(np.isfinite(values)):
         raise ValueError('误差序列为空或包含无效数值')
     return {

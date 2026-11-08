@@ -7,6 +7,15 @@ import os
 import numpy as np
 import pandas as pd
 
+from .data_loader import read_excel_table, read_text_table
+from .errors import ValidationError
+
+from .input_limits import (
+    ensure_file_size,
+    validate_sample_count,
+    validate_table_shape,
+)
+
 
 FIELD_NAMES = ('az_true', 'el_true', 'az_meas', 'el_meas')
 FIELD_ALIASES = {
@@ -15,6 +24,7 @@ FIELD_ALIASES = {
     'az_meas': {'az_meas', 'azimuth_meas', '方位角实测值', '方位实测值', '实测方位角'},
     'el_meas': {'el_meas', 'elevation_meas', '俯仰角实测值', '俯仰实测值', '实测俯仰角'},
 }
+TEXT_EXTENSIONS = ('.csv', '.txt', '.dat', '.log')
 
 
 def _normalized_header(value) -> str:
@@ -24,25 +34,30 @@ def _normalized_header(value) -> str:
 def _read_table(filepath: str) -> pd.DataFrame:
     extension = os.path.splitext(filepath)[1].lower()
     if extension in ('.xlsx', '.xls', '.xlsm'):
-        try:
-            return pd.read_excel(filepath, header=None)
-        except ImportError as exc:
-            raise ValueError('读取 Excel 需要安装 openpyxl 或相应 Excel 引擎') from exc
-    if extension in ('.csv', '.txt'):
-        try:
-            return pd.read_csv(filepath, header=None, sep=None, engine='python')
-        except UnicodeDecodeError:
-            return pd.read_csv(filepath, header=None, sep=None, engine='python', encoding='gbk')
-    raise ValueError('仅支持 .xlsx、.xls、.xlsm、.csv 和 .txt 文件')
+        table = read_excel_table(filepath)
+        validate_table_shape(table.shape, label='校正 Excel 表')
+        return table
+    if extension in TEXT_EXTENSIONS:
+        return read_text_table(
+            filepath,
+            label='校正文本表',
+            fallback_separator=None,
+            delimiter_candidates=(',', ';', '，', '\t', '|'),
+        )
+    raise ValidationError('仅支持 .xlsx、.xls、.xlsm、.csv、.txt、.dat 和 .log 文件')
 
 
 def load_calibration_data(filepath: str) -> dict:
     """Load and validate the first four calibration fields from a table."""
     if not filepath or not os.path.isfile(filepath):
-        raise ValueError('请选择存在的数据文件')
-    raw = _read_table(filepath).dropna(how='all').dropna(axis=1, how='all')
+        raise ValidationError('请选择存在的数据文件')
+    ensure_file_size(filepath, label='校正数据文件')
+    raw = _read_table(filepath)
+    validate_table_shape(raw.shape, label='校正数据表')
+    raw = raw.dropna(how='all').dropna(axis=1, how='all')
+    validate_table_shape(raw.shape, label='校正数据表')
     if raw.shape[1] < 4:
-        raise ValueError(f'数据文件至少需要 4 列，当前为 {raw.shape[1]} 列')
+        raise ValidationError(f'数据文件至少需要 4 列，当前为 {raw.shape[1]} 列')
 
     first_row = [_normalized_header(value) for value in raw.iloc[0].tolist()]
     index_by_field = {}
@@ -73,9 +88,10 @@ def load_calibration_data(filepath: str) -> dict:
     invalid_rows = numeric.isna().any(axis=1)
     if invalid_rows.any():
         first_invalid = int(np.flatnonzero(invalid_rows.to_numpy())[0]) + 1
-        raise ValueError(f'第 {first_invalid} 条数据存在空值或非数值内容')
+        raise ValidationError(f'第 {first_invalid} 条数据存在空值或非数值内容')
     if numeric.empty:
-        raise ValueError('数据文件中没有有效样本')
+        raise ValidationError('数据文件中没有有效样本')
+    validate_sample_count(len(numeric))
 
     result = {field: numeric[field].to_numpy(dtype=float) for field in FIELD_NAMES}
     result.update({

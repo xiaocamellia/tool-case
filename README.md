@@ -1,6 +1,6 @@
 # 🛰️ 便携化工具箱 (Portable Radar Toolbox) V1.0.0
 
-[![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.12%2B-blue)](https://www.python.org/)
 [![PyQt5](https://img.shields.io/badge/GUI-PyQt5-green)](https://www.riverbankcomputing.com/software/pyqt/)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
@@ -125,7 +125,7 @@
 
 ### 环境要求 | Prerequisites
 
-- Python 3.8+
+- Python 3.11+（CI 验证 3.11、3.12）
 - pip / conda
 
 ### 安装运行 | Installation & Run
@@ -135,11 +135,14 @@
 git clone https://github.com/xiaocamellia/tool-case.git
 cd tool-case
 
-# 安装依赖
-pip install -r requirements.txt
+# 安装锁定的运行依赖
+pip install -r requirements.lock
 
-# 开发/测试时安装
+# 开发/测试时安装（含 Ruff、mypy、pip-audit）
 pip install -r requirements-dev.txt
+
+# 校验锁定文件哈希
+python scripts/verify_lock_hash.py
 
 # 启动程序
 python radar_tool/run.py
@@ -148,13 +151,10 @@ python radar_tool/run.py
 ### 依赖清单 | Dependencies
 
 ```
-PyQt5>=5.15
-matplotlib>=3.5
-numpy>=1.21
-pandas>=1.3
-scipy>=1.7
-openpyxl>=3.0
-python-docx>=0.8.11
+# requirements.txt 面向 Python 3.11+ 的安全维护版本
+PyQt5>=5.15,<5.16
+matplotlib / numpy / pandas / scipy / openpyxl / python-docx
+xlrd>=2.0.1,<3
 ```
 
 ---
@@ -166,6 +166,10 @@ tool-case/
 ├── README.md                     # 本文件
 ├── requirements.txt              # 运行依赖
 ├── requirements-dev.txt          # 开发与测试依赖
+├── requirements.lock             # 运行依赖精确锁定
+├── requirements.lock.sha256      # 锁定文件 SHA256
+├── pyproject.toml                # 包入口与工具配置
+├── scripts/verify_lock_hash.py   # 锁定文件校验脚本
 ├── image/                        # 图标资源
 │   └── rose.ico
 ├── radar_tool/                   # 主程序包
@@ -198,11 +202,10 @@ tool-case/
 ├── docs/
 │   └── 设计文档/                  # 模块设计与处理流程文档
 ├── packaging/
-│   └── 雷达数据可视化工具.spec     # PyInstaller 打包配置
+│   └── nuitka/                    # Nuitka standalone 构建配置
 ├── artifacts/                    # 本地编译输出（已忽略）
 │   ├── bin/                      # 可执行文件及随附 image 资源
 │   ├── nuitka/                   # Nuitka 中间产物与分发目录
-│   ├── pyinstaller/              # PyInstaller 构建目录
 │   └── reports/                  # 编译报告
 ├── tools/                        # 本地打包工具（已忽略）
 └── var/                          # 运行时数据（自动生成、已忽略）
@@ -247,18 +250,35 @@ tool-case/
 
 CSV 使用“中文名称(english_identifier)”表头。UTC 相关字段包括 `GPS原始UTC时间(gps_utc_time_raw)`、`GPS插值UTC时间(gps_interpolated_utc_time)`、`GPS粗对齐UTC时间(gps_coarse_aligned_utc_time)`、`GPS精对齐UTC时间(gps_fine_aligned_utc_time)` 和 `GPS UTC时间单位(gps_utc_time_unit)`；UTC 数值保持 GPS 源数据的时间单位，不擅自按 Unix 时间转换。
 
+### 数据文件加载 | Data Loading
+
+- 支持 `TXT`、`CSV`、`DAT`、`LOG`、`XLSX` 和 `XLS` 数据文件。
+- 文本文件自动识别 UTF-8、UTF-8 BOM 和 GB18030，并识别逗号、分号、中文逗号、制表符或空格分隔。
+- 引号内分隔符、行尾分隔符、空值和行字段数差异不会导致整份正常数据加载失败；短行自动补空值。
+- 列名文件按非空行读取。列名数少于数据列时自动补 `列--N`，多于数据列时忽略多余名称。
+- 字段关联仍可在“复核项目与字段映射”中人工选择；不要依赖列名顺序推断业务含义。
+- 若文件仍无法识别，请检查是否误选列名文件、纯文本说明文件或不支持的格式，并使用界面错误信息和日志错误编号进行定位。
+
 ### 打包部署 | Packaging
 
-程序兼容 PyInstaller 和 Nuitka 打包。打包配置位于 `packaging/`，历史编译输出统一存放在 `artifacts/`。打包后可执行文件与 `image/` 目录需放在同一路径下。
+项目仅使用 Nuitka `standalone` 打包。发布采用目录型分发，不使用 `onefile`，避免每次启动解压临时文件，以获得更稳定、更快的启动体验。构建配置位于 `packaging/nuitka/`，编译输出统一存放在 `artifacts/`。
 
-为降低 Nuitka 打包后的启动等待时间，主窗口采用页签懒加载：启动时只创建首页，其他功能页在首次切换时再初始化。
+主窗口采用页签懒加载：启动时只创建首页，其他功能页在首次切换时再初始化。
 
-```bash
-# 示例：使用 PyInstaller 打包
-pyinstaller --onefile --windowed --add-data "image;image" radar_tool/run.py
-# 或直接使用已整理的配置：
-pyinstaller packaging/雷达数据可视化工具.spec
+```powershell
+# 固定构建环境：Python 3.12.7、MSVC 14.3、Nuitka 4.1.3
+python scripts\verify_lock_hash.py
+python -m pip install --no-deps -r requirements.lock
+python -m pip install --no-deps -r requirements-build.lock
+
+# 正式构建必须提供可信代码签名证书
+.\packaging\nuitka\build.ps1 -CertificateThumbprint <SHA1-thumbprint>
+
+# 仅本地链路验证可跳过签名；该产物禁止发布
+.\packaging\nuitka\build.ps1 -SkipTests -AllowUnsigned
 ```
+
+正式发布由 `.github/workflows/release.yml` 在 `v*` 标签或手动触发时执行。流水线从锁定依赖重建环境，完成全量测试、Nuitka standalone 构建、全 PE 文件 Authenticode 签名、隔离安装与离线启动冒烟、Qt/字体/图标/Excel/Word 资源检查、SBOM、第三方清单、构建清单、SHA256 和 Windows Defender 恶意软件扫描。GitHub Actions 需要配置 `WINDOWS_CERTIFICATE_BASE64` 与 `WINDOWS_CERTIFICATE_PASSWORD` 两个发布密钥。
 
 ---
 
@@ -273,6 +293,13 @@ pyinstaller packaging/雷达数据可视化工具.spec
 ---
 
 ## 📝 近期更新 | Recent Changes
+
+### 2026-11-08
+
+- **数据加载提速**：编码和分隔符检测共享同一样本，正常文本文件由两次 Pandas 解析降为一次；8 列数字 CSV 基准测试中，1 万、10 万和 30 万行加载时间分别降低约 54%、74% 和 75%。
+- **加载兼容性**：放宽普通文本数据的分隔符、引号、行尾符号和缺失字段规则；列名数量不一致不再阻断加载。
+- **错误诊断**：后台加载保留原始异常类型，普通格式问题不再误报为“未预期错误”；移除线程启动前设置优先级产生的无效警告。
+- **发布计划**：`PROJECT_AUDIT_ACTION_PLAN.md` 增加从构建环境、质量门禁、签名、隔离验收到 GitHub Release 和回滚的详细打包流程。
 
 ### 2026-08-28
 
