@@ -76,7 +76,7 @@ jobs:
         run: |
           .\packaging\nuitka\build.ps1 `
             -Python python `
-            -Version "1.0.0" `
+            -Version "1.1.0" `
             -CertificateThumbprint $env:WINDOWS_CERTIFICATE_THUMBPRINT `
             -SkipTests
 
@@ -91,8 +91,8 @@ jobs:
         with:
           name: PortableRadarToolbox-win64
           path: |
-            artifacts/nuitka/PortableRadarToolbox-1.0.0-win64.zip
-            artifacts/nuitka/PortableRadarToolbox-1.0.0-win64.zip.sha256
+            artifacts/nuitka/PortableRadarToolbox-1.1.0-win64.zip
+            artifacts/nuitka/PortableRadarToolbox-1.1.0-win64.zip.sha256
             artifacts/nuitka/build-*.log
           if-no-files-found: error
 
@@ -103,8 +103,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $assets = @(
-            "artifacts/nuitka/PortableRadarToolbox-1.0.0-win64.zip",
-            "artifacts/nuitka/PortableRadarToolbox-1.0.0-win64.zip.sha256"
+            "artifacts/nuitka/PortableRadarToolbox-1.1.0-win64.zip",
+            "artifacts/nuitka/PortableRadarToolbox-1.1.0-win64.zip.sha256"
           )
           if (gh release view $env:GITHUB_REF_NAME 2>$null) {
             gh release upload $env:GITHUB_REF_NAME @assets --clobber

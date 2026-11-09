@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$Python = "python",
-    [string]$Version = "1.0.0",
+    [string]$Version = "1.1.0",
+    [string]$Jobs = "auto",
     [string]$CertificateThumbprint,
     [string]$CertificatePath,
     [string]$CertificatePassword,
@@ -46,7 +47,15 @@ function Invoke-LoggedCommand {
     param([string]$FilePath, [string[]]$Arguments)
 
     Write-Host ("RUN: {0} {1}" -f $FilePath, ($Arguments -join " "))
-    & $FilePath @Arguments 2>&1
+    $NativeLog = '{0}.native' -f $BuildLog
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        & $FilePath @Arguments 2>&1 | Out-File -LiteralPath $NativeLog -Append -Encoding utf8
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
     if ($LASTEXITCODE -ne 0) {
         throw "Command failed with exit code $LASTEXITCODE`: $FilePath"
     }
@@ -119,6 +128,73 @@ function Get-SignTool {
     throw "signtool.exe was not found in PATH or the Windows 10/11 SDK."
 }
 
+function Import-VcVarsEnvironment {
+    param([string]$RequiredMsvcFamily = "14.3")
+
+    $searchRoots = New-Object System.Collections.Generic.List[string]
+    foreach ($raw in @(${env:ProgramFiles(x86)}, $env:ProgramFiles, ${env:ProgramFiles(x86)}, "C:\Program Files (x86)", "C:\Program Files")) {
+        if (-not [string]::IsNullOrWhiteSpace($raw)) {
+            $searchRoots.Add($raw)
+        }
+    }
+    if ($searchRoots.Count -eq 0) {
+        $searchRoots.Add("C:\Program Files (x86)")
+        $searchRoots.Add("C:\Program Files")
+    }
+
+    $candidates = New-Object System.Collections.Generic.List[string]
+    $vswhereCandidates = New-Object System.Collections.Generic.List[string]
+    foreach ($root in $searchRoots) {
+        $vswhereCandidates.Add((Join-Path $root "Microsoft Visual Studio\Installer\vswhere.exe"))
+    }
+    foreach ($vswhere in $vswhereCandidates) {
+        if (Test-Path -LiteralPath $vswhere) {
+            $installPaths = & $vswhere -latest -products * `
+                -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+                -property installationPath 2>$null
+            foreach ($installPath in $installPaths) {
+                if ($installPath) {
+                    $candidates.Add((Join-Path $installPath.Trim() "VC\Auxiliary\Build\vcvars64.bat"))
+                }
+            }
+            break
+        }
+    }
+    foreach ($root in $searchRoots) {
+        foreach ($edition in @("BuildTools", "Community", "Professional", "Enterprise")) {
+            $candidates.Add((Join-Path $root "Microsoft Visual Studio\2022\$edition\VC\Auxiliary\Build\vcvars64.bat"))
+        }
+    }
+
+    $vcvarsPath = $null
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path -LiteralPath $candidate)) {
+            $vcvarsPath = $candidate
+            break
+        }
+    }
+    if (-not $vcvarsPath) {
+        throw "Unable to locate vcvars64.bat for MSVC family $RequiredMsvcFamily. Install Visual Studio Build Tools with the C++ toolset."
+    }
+
+    $envDump = cmd /c "`"$vcvarsPath`" >nul 2>&1 && set"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to initialize MSVC environment via $vcvarsPath"
+    }
+    foreach ($line in $envDump) {
+        if ($line -match '^([^=]+)=(.*)$') {
+            Set-Item -Path ("Env:{0}" -f $Matches[1]) -Value $Matches[2]
+        }
+    }
+
+    $clPath = Get-Command "cl.exe" -ErrorAction SilentlyContinue
+    if (-not $clPath) {
+        throw "cl.exe was not found after importing $vcvarsPath"
+    }
+    Write-Host "MSVC environment imported from $vcvarsPath"
+    Write-Host "cl.exe: $($clPath.Source)"
+}
+
 function Invoke-CodeSigning {
     param([string]$DistributionDirectory)
 
@@ -187,11 +263,34 @@ Remove-DirectoryIfPresent -Path $OutputRoot
 New-Item -ItemType Directory -Path $OutputRoot -Force | Out-Null
 New-Item -ItemType Directory -Path $CompileRoot -Force | Out-Null
 New-Item -ItemType Directory -Path $NuitkaCacheDir -Force | Out-Null
+
+# Import MSVC before redirecting LOCALAPPDATA; VS discovery may depend on it.
+$script:VcVarsImported = $false
+try {
+    Import-VcVarsEnvironment -RequiredMsvcFamily $BuildConfig.msvc_version
+    $script:VcVarsImported = $true
+}
+catch {
+    throw
+}
+
 $env:NUITKA_CACHE_DIR = $NuitkaCacheDir
+$env:LOCALAPPDATA = Join-Path $ProjectRoot 'var\nuitka-local-app-data'
+$NuitkaSubCacheNames = @('downloads', 'library_dependencies', 'module-cache', 'scons-msvc-config')
+foreach ($CacheName in $NuitkaSubCacheNames) {
+    $CachePath = Join-Path $NuitkaCacheDir $CacheName
+    New-Item -ItemType Directory -Path $CachePath -Force | Out-Null
+    $EnvironmentName = 'NUITKA_CACHE_DIR_' + $CacheName.Replace('-', '_').ToUpperInvariant()
+    Set-Item -Path ('Env:' + $EnvironmentName) -Value $CachePath
+}
 Start-Transcript -Path $BuildLog -Append | Out-Null
 $TranscriptActive = $true
 
 try {
+    if (-not $script:VcVarsImported) {
+        Import-VcVarsEnvironment -RequiredMsvcFamily $BuildConfig.msvc_version
+    }
+
     Invoke-LoggedCommand -FilePath $PythonExecutable -Arguments @(
         (Join-Path $ProjectRoot "scripts\verify_lock_hash.py")
     )
@@ -205,7 +304,14 @@ try {
         )
     }
 
-    $NuitkaVersionOutput = (& $PythonExecutable -m nuitka --version 2>&1 | Out-String)
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $NuitkaVersionOutput = (& $PythonExecutable -m nuitka --msvc=$($BuildConfig.msvc_version) --version 2>&1 | Out-String)
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
     $NuitkaVersionMatch = [regex]::Match($NuitkaVersionOutput, "(?m)^\s*(\d+\.\d+\.\d+)\s*$")
     if (-not $NuitkaVersionMatch.Success -or $NuitkaVersionMatch.Groups[1].Value -ne $BuildConfig.nuitka_version) {
         throw "Nuitka must be $($BuildConfig.nuitka_version); version output was: $NuitkaVersionOutput"
@@ -213,23 +319,23 @@ try {
 
     $ImageRoot = Join-Path $ProjectRoot "image"
     $EntryScript = Join-Path $ProjectRoot "radar_tool\run.py"
+    $JobArguments = @()
+    if ($Jobs -and $Jobs -ne "auto") {
+        $JobArguments = @("--jobs=$Jobs")
+    }
     $NuitkaArguments = @(
         "-m", "nuitka",
         "--standalone",
-        "--windows-disable-console",
+        "--windows-console-mode=disable",
         "--enable-plugin=pyqt5",
         "--deployment",
         "--assume-yes-for-downloads",
         "--msvc=$($BuildConfig.msvc_version)",
+        $JobArguments,
         "--lto=no",
+        "--nofollow-import-to=*.tests",
         "--include-package=radar_tool",
-        "--include-package=PyQt5",
-        "--include-package-data=PyQt5",
-        "--include-package=matplotlib",
         "--include-package-data=matplotlib",
-        "--include-package=numpy",
-        "--include-package=pandas",
-        "--include-package=scipy",
         "--include-package=openpyxl",
         "--include-package-data=openpyxl",
         "--include-package=docx",

@@ -4,6 +4,7 @@
 """
 
 import math
+import re
 import warnings
 
 import numpy as np
@@ -162,9 +163,17 @@ class ArrayDesignerPanel(QWidget):
 
         ctrl_layout.addWidget(QLabel('频率:'))
         self.combo_freq = QComboBox()
-        self.combo_freq.addItems(['10 GHz', '2.4 GHz', '5.8 GHz', '1 GHz'])
+        self.combo_freq.addItems(['10 GHz', '2.4 GHz', '5.8 GHz', '1 GHz', '自定义'])
         self.combo_freq.currentIndexChanged.connect(self._on_freq_change)
         ctrl_layout.addWidget(self.combo_freq)
+
+        self.edit_freq_custom = QLineEdit('10000000000')
+        self.edit_freq_custom.setPlaceholderText('数值或带单位, 如 3.5e9 / 3.5 GHz')
+        self.edit_freq_custom.setToolTip('支持 Hz / kHz / MHz / GHz，也可直接输入纯数值（Hz）')
+        self.edit_freq_custom.setMaximumWidth(170)
+        self.edit_freq_custom.editingFinished.connect(self._on_freq_change)
+        self.edit_freq_custom.hide()
+        ctrl_layout.addWidget(self.edit_freq_custom)
 
         self.combo_weight = QComboBox()
         self.combo_weight.addItems(['均匀加权', '余弦加权', '汉明加权', '切比雪夫(-30dB)', '切比雪夫(-40dB)'])
@@ -251,10 +260,43 @@ class ArrayDesignerPanel(QWidget):
 
     def _get_freq(self):
         idx = self.combo_freq.currentIndex()
-        return [10e9, 2.4e9, 5.8e9, 1e9][idx]
+        if idx < 4:
+            return [10e9, 2.4e9, 5.8e9, 1e9][idx]
+        return self._parse_custom_freq(self.edit_freq_custom.text())
 
-    def _on_freq_change(self):
-        self.fc = self._get_freq()
+    @staticmethod
+    def _parse_custom_freq(text):
+        """解析自定义频率，支持纯数值（Hz）或带 Hz/kHz/MHz/GHz 后缀。"""
+        s = str(text).strip().replace(',', '').replace(' ', '')
+        if not s:
+            raise ValueError('频率不能为空')
+        match = re.fullmatch(
+            r'(?i)([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)(ghz|mhz|khz|hz|g|m|k)?',
+            s,
+        )
+        if not match:
+            raise ValueError('频率必须是数值，可选单位 Hz/kHz/MHz/GHz')
+        value = float(match.group(1))
+        unit = (match.group(2) or 'hz').lower()
+        factor = {'hz': 1.0, 'khz': 1e3, 'k': 1e3,
+                  'mhz': 1e6, 'm': 1e6, 'ghz': 1e9, 'g': 1e9}[unit]
+        freq = value * factor
+        if not math.isfinite(freq) or freq <= 0:
+            raise ValueError('频率必须是大于 0 的有限数值')
+        return freq
+
+    def _on_freq_change(self, *args):
+        is_custom = self.combo_freq.currentIndex() == self.combo_freq.count() - 1
+        self.edit_freq_custom.setVisible(is_custom)
+        try:
+            self.fc = self._get_freq()
+        except ValueError as exc:
+            self.edit_freq_custom.setStyleSheet('border: 1px solid #ef4444;')
+            self.edit_freq_custom.setToolTip(str(exc))
+            logger.warning('频率设置无效: %s', exc)
+            return
+        self.edit_freq_custom.setStyleSheet('')
+        self.edit_freq_custom.setToolTip('支持 Hz / kHz / MHz / GHz，也可直接输入纯数值（Hz）')
         self._on_param_change()
 
     def _on_template_change(self):

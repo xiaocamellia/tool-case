@@ -1,4 +1,4 @@
-# 🛰️ 便携化工具箱 (Portable Radar Toolbox) V1.0.0
+# 🛰️ 便携化工具箱 (Portable Radar Toolbox) V1.1.0
 
 [![Python](https://img.shields.io/badge/Python-3.12%2B-blue)](https://www.python.org/)
 [![PyQt5](https://img.shields.io/badge/GUI-PyQt5-green)](https://www.riverbankcomputing.com/software/pyqt/)

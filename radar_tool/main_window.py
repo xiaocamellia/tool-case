@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt
 
+from . import __version__
 from .background_tasks import TaskRegistry
 from .compare_analysis import CompareAnalysisMixin
 from .ui_theme import MAIN_STYLESHEET, STATUSBAR_STYLE
@@ -37,7 +38,7 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
             self.task_registry.task_completed,
         ):
             signal.connect(self._on_background_task_event)
-        self.setWindowTitle('便携化工具箱V1.0.0')
+        self.setWindowTitle(f'便携化工具箱 V{__version__}')
         self.setGeometry(100, 100, 1400, 900)
 
         self.compare_test_df = None
@@ -69,8 +70,6 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
         main_layout = QVBoxLayout(central)
 
         self.feature_tabs = QTabWidget()
-        self._tab_panels = [None] * 9
-        self._tab_loaded = [False] * 9
         self._tab_factories = [
             self._create_viz_tab,
             self._create_compare_tab,
@@ -80,7 +79,8 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
             self._create_calc_tab,
             self._create_format_conversion_tab,
             self._create_recorder_tab,
-            self._create_game_tab,
+            # 摸鱼游戏入口已隐藏；如需恢复显示，取消下面两行注释
+            # self._create_game_tab,
         ]
         self._tab_names = [
             '数据可视化处理',
@@ -91,8 +91,10 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
             '🧮 指标计算器',
             '格式转换',
             '📋 试验记录助手',
-            '🎮 摸鱼游戏',
+            # '🎮 摸鱼游戏',
         ]
+        self._tab_panels = [None] * len(self._tab_names)
+        self._tab_loaded = [False] * len(self._tab_names)
 
         # 第 0 页（可视化）立即创建并添加到 tabs
         panel0 = self._lazy_create_or_get_panel(0)
@@ -102,10 +104,17 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
 
         self.feature_tabs.currentChanged.connect(self._on_tab_changed)
         main_layout.addWidget(self.feature_tabs, 1)
-        logger.info('UI 初始化完成: 可视化(已加载) + 8个面板(延迟加载)')
+        logger.info('UI 初始化完成: 可视化(已加载) + %d个面板(延迟加载)',
+                    max(len(self._tab_names) - 1, 0))
 
         self.status_label = QLabel('就绪')
         self.statusBar().addWidget(self.status_label)
+        self.version_label = QLabel(f'v{__version__}')
+        self.version_label.setObjectName('version_label')
+        self.version_label.setStyleSheet(
+            'color: #64748b; font-size: 9pt; padding-right: 12px;'
+        )
+        self.statusBar().addPermanentWidget(self.version_label)
 
     def _lazy_create_or_get_panel(self, index):
         if self._tab_loaded[index]:

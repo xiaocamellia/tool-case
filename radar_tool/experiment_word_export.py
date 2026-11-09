@@ -368,6 +368,11 @@ class WordExportMixin:
                     data = current.data(Qt.UserRole)
                     if data and data[0] == 'task':
                         _, pid, tid = data
+                    elif data and data[0] == 'record':
+                        _, pid, tid, _ = data
+            if not pid or not tid:
+                pid = pid or getattr(self, 'current_project_id', None)
+                tid = tid or getattr(self, 'current_task_id', None)
             if not pid or not tid:
                 QMessageBox.information(self, '提示', '请先在左侧选中一个任务')
                 return
@@ -389,6 +394,10 @@ class WordExportMixin:
                     data = current.data(Qt.UserRole)
                     if data and data[0] == 'project':
                         pid = data[1]
+                    elif data and data[0] in ('task', 'record'):
+                        pid = data[1]
+            if not pid:
+                pid = getattr(self, 'current_project_id', None)
             if not pid:
                 QMessageBox.information(self, '提示', '请先在左侧选中一个项目')
                 return

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from unittest.mock import patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
 import pandas as pd
+import pytest
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication
 
@@ -84,6 +86,80 @@ def test_interferometer_clear_control_resets_result_panels():
 
     assert panel.sim_result is None
     assert panel.txt_stats.toPlainText() == '结果已清除。'
+    panel.close()
+
+
+def test_interferometer_custom_coords_and_default_snr_take_effect():
+    import numpy as np
+
+    _app()
+    panel = InterferometerSimPanel()
+    custom = np.array([[0.0, 0.0], [0.1, 0.0], [0.0, 0.1], [0.1, 0.1]])
+    panel._custom_coords = custom
+    panel.combo_array_type.setCurrentIndex(4)
+    pos = panel.get_array_positions()
+    assert pos.shape == custom.shape
+    assert np.allclose(pos, custom)
+
+    panel.spin_snr.setValue(5.0)
+    assert panel.get_targets()[0]['snr'] == 5.0
+    panel.close()
+
+
+def test_interferometer_custom_frequency_rejects_invalid_text():
+    _app()
+    panel = InterferometerSimPanel()
+    panel.combo_fc.setCurrentIndex(panel.combo_fc.count() - 1)
+    panel.edit_fc_custom.setText('abc')
+    with pytest.raises(ValueError):
+        panel.get_fc()
+    panel.edit_fc_custom.setText('3500000000')
+    assert panel.get_fc() == pytest.approx(3.5e9)
+    panel.close()
+
+
+def test_experiment_tree_selection_survives_refresh():
+    _app()
+    panel = ExpRecorderPanel()
+    with tempfile.TemporaryDirectory() as directory:
+        data_dir = os.path.join(directory, 'data')
+        images_dir = os.path.join(data_dir, 'images')
+        os.makedirs(images_dir, exist_ok=True)
+        panel.projects = {
+            'p1': {
+                'name': '项目A',
+                'description': '',
+                'tasks': {
+                    't1': {
+                        'name': '任务A',
+                        'records': {
+                            'r1': {
+                                'title': '记录A',
+                                'date': '2025-01-01',
+                                'personnel': '',
+                                'location': '',
+                                'template': '通用试验记录',
+                                'conditions': '',
+                                'content': '',
+                                'steps': [],
+                                'conclusion': '',
+                            }
+                        },
+                    }
+                },
+            }
+        }
+        with patch('radar_tool.exp_recorder.DATA_DIR', data_dir), patch(
+            'radar_tool.exp_recorder.IMAGES_DIR', images_dir
+        ):
+            panel._refresh_tree()
+            panel._load_record('p1', 't1', 'r1')
+
+            panel.tree_projects.setCurrentRow(0)  # 点击项目节点
+
+            current = panel.tree_projects.currentItem()
+            assert current is not None
+            assert current.data(Qt.UserRole)[0] == 'project'
     panel.close()
 
 

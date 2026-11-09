@@ -132,6 +132,33 @@ class ArrayDesignerTests(unittest.TestCase):
         self.assertEqual(panel.elements[1]['phase'], 45.0)
         panel.close()
 
+    def test_custom_frequency_parsing_accepts_values_and_units(self):
+        self.assertAlmostEqual(ArrayDesignerPanel._parse_custom_freq('1500'), 1500.0)
+        self.assertAlmostEqual(
+            ArrayDesignerPanel._parse_custom_freq('2.4e9'), 2.4e9)
+        self.assertAlmostEqual(
+            ArrayDesignerPanel._parse_custom_freq('3.5 GHz'), 3.5e9)
+        self.assertAlmostEqual(
+            ArrayDesignerPanel._parse_custom_freq('900MHz'), 0.9e9)
+        self.assertAlmostEqual(
+            ArrayDesignerPanel._parse_custom_freq('1,500'), 1500.0)
+
+    def test_custom_frequency_parsing_rejects_invalid_text(self):
+        for bad in ('', 'abc', '-3 GHz', '0', '1e400'):
+            with self.assertRaises(ValueError):
+                ArrayDesignerPanel._parse_custom_freq(bad)
+
+    def test_custom_frequency_selection_updates_fc(self):
+        panel = ArrayDesignerPanel()
+        panel.combo_freq.setCurrentIndex(panel.combo_freq.count() - 1)
+        panel.edit_freq_custom.setText('7.5 GHz')
+        panel._on_freq_change()
+        self.assertAlmostEqual(panel.fc, 7.5e9)
+        panel.edit_freq_custom.setText('bad')
+        panel._on_freq_change()
+        self.assertAlmostEqual(panel.fc, 7.5e9)  # 非法输入保持上次有效值
+        panel.close()
+
 
 if __name__ == '__main__':
     unittest.main()

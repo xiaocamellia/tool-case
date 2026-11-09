@@ -561,8 +561,13 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
         """向指定步骤添加截图"""
         filepath, _ = QFileDialog.getOpenFileName(
             self, '选择截图', '',
-            '图片文件 (*.png *.jpg *.jpeg *.bmp *.tiff *.webp);;所有文件 (*.*)')
+            '图片文件 (*.png *.jpg *.jpeg *.bmp *.tif *.tiff *.webp);;所有文件 (*.*)')
         if not filepath:
+            return
+        try:
+            _validate_source_image(filepath)
+        except ValueError as exc:
+            QMessageBox.warning(self, '图片无法加载', f'所选图片不能使用：\n{exc}')
             return
         # 找到对应步骤的 widget
         for sw in self.step_widgets:
@@ -598,7 +603,10 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
     # ==================== 项目/任务/记录管理 ====================
 
     def _refresh_tree(self):
-        """刷新项目树"""
+        """刷新项目树（保留当前选中项）"""
+        current = self.tree_projects.currentItem()
+        current_data = current.data(Qt.UserRole) if current is not None else None
+
         self.tree_projects.blockSignals(True)
         self.tree_projects.clear()
 
@@ -620,6 +628,12 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
                     rec_item.setData(Qt.UserRole, ('record', pid, tid, rid))
                     self.tree_projects.addItem(rec_item)
 
+        if current_data is not None:
+            for row in range(self.tree_projects.count()):
+                item = self.tree_projects.item(row)
+                if item.data(Qt.UserRole) == current_data:
+                    self.tree_projects.setCurrentItem(item)
+                    break
         self.tree_projects.blockSignals(False)
 
     def _on_tree_selection(self, current, previous):
@@ -777,6 +791,7 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
         self.step_widgets = []
 
         steps = rec.get('steps', [])
+        skipped_images = 0
         if steps:
             for s in steps:
                 self._add_step()
@@ -797,7 +812,9 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
                             continue
                         try:
                             ipath = _safe_image_path(ipath, validate_image=True)
-                        except ValueError:
+                        except ValueError as exc:
+                            skipped_images += 1
+                            logger.warning('记录 %s 图片加载失败: %s', rid, exc)
                             continue
                         display = f'🖼️ {os.path.basename(ipath)}'
                         if icaption:
@@ -811,7 +828,16 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
 
 
         self.stacked.setCurrentIndex(1)
-        self.lbl_save_status.setText('已加载')
+        if skipped_images:
+            self.lbl_save_status.setText(f'⚠️ {skipped_images} 张图片加载失败（已跳过）')
+            QMessageBox.warning(
+                self,
+                '图片加载失败',
+                f'有 {skipped_images} 张图片无法加载（文件缺失或格式不支持），已跳过。\n'
+                '注意：若此时保存，失败的图片引用将被移除。',
+            )
+        else:
+            self.lbl_save_status.setText('已加载')
         self._record_dirty = False
 
     def _save_current_record(self, quiet=False):
@@ -952,15 +978,22 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
         tid = self.current_task_id or 'unknown_task'
         rid = self.current_record_id or 'unknown_record'
         storage_dir = self._image_storage_dir(pid, tid, rid)
-        base = os.path.basename(src)
+        # 已经存放在本记录存储目录中的图片直接沿用，避免每次保存都重复复制
+        src_abs = os.path.abspath(src)
+        if os.path.dirname(src_abs) == os.path.abspath(storage_dir):
+            return {
+                'path': os.path.relpath(src_abs, _resolve_images_root()),
+                'caption': caption,
+            }
+        base = os.path.basename(src_abs)
         stem, ext = os.path.splitext(base)
         digest = hashlib.md5(
-            (src + str(os.path.getmtime(src))).encode('utf-8', 'ignore')
+            (src_abs + str(os.path.getmtime(src_abs))).encode('utf-8', 'ignore')
         ).hexdigest()[:8]
         dst = os.path.join(storage_dir, f'{stem}_{digest}{ext}')
         try:
-            if os.path.abspath(src) != os.path.abspath(dst):
-                shutil.copy2(src, dst)
+            if src_abs != os.path.abspath(dst):
+                shutil.copy2(src_abs, dst)
             dst = _safe_image_path(dst, validate_image=True)
             return {
                 'path': os.path.relpath(dst, _resolve_images_root()),

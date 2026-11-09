@@ -10,10 +10,10 @@ from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Sequence
 
 import pandas as pd
 
+from . import __version__ as APP_VERSION
 from .errors import AppError, ExportError, safe_exception_message
 
 
-APP_VERSION = '1.0.0'
 EXPORT_SCHEMA_VERSION = 1
 CSV_FORMULA_PREFIXES = ('=', '+', '-', '@')
 

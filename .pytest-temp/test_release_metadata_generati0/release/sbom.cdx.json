@@ -1,0 +1,174 @@
+{
+  "bomFormat": "CycloneDX",
+  "components": [
+    {
+      "name": "PyQt5",
+      "purl": "pkg:pypi/pyqt5@5.15.11",
+      "type": "library",
+      "version": "5.15.11"
+    },
+    {
+      "name": "PyQt5-Qt5",
+      "purl": "pkg:pypi/pyqt5-qt5@5.15.2",
+      "type": "library",
+      "version": "5.15.2"
+    },
+    {
+      "name": "PyQt5-sip",
+      "purl": "pkg:pypi/pyqt5-sip@12.15.0",
+      "type": "library",
+      "version": "12.15.0"
+    },
+    {
+      "name": "contourpy",
+      "purl": "pkg:pypi/contourpy@1.1.1",
+      "type": "library",
+      "version": "1.1.1"
+    },
+    {
+      "name": "cycler",
+      "purl": "pkg:pypi/cycler@0.12.1",
+      "type": "library",
+      "version": "0.12.1"
+    },
+    {
+      "name": "et-xmlfile",
+      "purl": "pkg:pypi/et-xmlfile@2.0.0",
+      "type": "library",
+      "version": "2.0.0"
+    },
+    {
+      "name": "fonttools",
+      "purl": "pkg:pypi/fonttools@4.68.0",
+      "type": "library",
+      "version": "4.68.0"
+    },
+    {
+      "name": "kiwisolver",
+      "purl": "pkg:pypi/kiwisolver@1.4.7",
+      "type": "library",
+      "version": "1.4.7"
+    },
+    {
+      "name": "lxml",
+      "purl": "pkg:pypi/lxml@6.1.3",
+      "type": "library",
+      "version": "6.1.3"
+    },
+    {
+      "name": "matplotlib",
+      "purl": "pkg:pypi/matplotlib@3.9.2",
+      "type": "library",
+      "version": "3.9.2"
+    },
+    {
+      "name": "numpy",
+      "purl": "pkg:pypi/numpy@1.26.4",
+      "type": "library",
+      "version": "1.26.4"
+    },
+    {
+      "name": "openpyxl",
+      "purl": "pkg:pypi/openpyxl@3.1.5",
+      "type": "library",
+      "version": "3.1.5"
+    },
+    {
+      "name": "packaging",
+      "purl": "pkg:pypi/packaging@24.2",
+      "type": "library",
+      "version": "24.2"
+    },
+    {
+      "name": "pandas",
+      "purl": "pkg:pypi/pandas@2.2.2",
+      "type": "library",
+      "version": "2.2.2"
+    },
+    {
+      "name": "pillow",
+      "purl": "pkg:pypi/pillow@13.0.0",
+      "type": "library",
+      "version": "13.0.0"
+    },
+    {
+      "name": "pyparsing",
+      "purl": "pkg:pypi/pyparsing@3.1.4",
+      "type": "library",
+      "version": "3.1.4"
+    },
+    {
+      "name": "python-dateutil",
+      "purl": "pkg:pypi/python-dateutil@3.0.0",
+      "type": "library",
+      "version": "3.0.0"
+    },
+    {
+      "name": "python-docx",
+      "purl": "pkg:pypi/python-docx@1.1.2",
+      "type": "library",
+      "version": "1.1.2"
+    },
+    {
+      "name": "pytz",
+      "purl": "pkg:pypi/pytz@2026.6",
+      "type": "library",
+      "version": "2026.6"
+    },
+    {
+      "name": "scipy",
+      "purl": "pkg:pypi/scipy@1.13.1",
+      "type": "library",
+      "version": "1.13.1"
+    },
+    {
+      "name": "six",
+      "purl": "pkg:pypi/six@1.17.0",
+      "type": "library",
+      "version": "1.17.0"
+    },
+    {
+      "name": "tzdata",
+      "purl": "pkg:pypi/tzdata@2026.6",
+      "type": "library",
+      "version": "2026.6"
+    },
+    {
+      "name": "typing-extensions",
+      "purl": "pkg:pypi/typing-extensions@4.16.0",
+      "type": "library",
+      "version": "4.16.0"
+    },
+    {
+      "name": "xlrd",
+      "purl": "pkg:pypi/xlrd@2.0.2",
+      "type": "library",
+      "version": "2.0.2"
+    }
+  ],
+  "metadata": {
+    "component": {
+      "name": "Portable Radar Toolbox",
+      "purl": "pkg:generic/portable-radar-toolbox@1.1.0",
+      "type": "application",
+      "version": "1.1.0"
+    },
+    "properties": [
+      {
+        "name": "radar_tool:source_sha256",
+        "value": "eb7cb415ce4800847699c9418c698009200ef51a4e6b7eb58916c51e98609689"
+      }
+    ],
+    "timestamp": "2023-11-14T22:13:20Z",
+    "tools": [
+      {
+        "name": "release-metadata",
+        "vendor": "Portable Radar Toolbox",
+        "version": "1"
+      }
+    ]
+  },
+  "serialNumber": "urn:uuid:aa67e728-461b-531a-a854-d8e740b1c056",
+  "specVersion": "1.5",
+  "version": 1
+}

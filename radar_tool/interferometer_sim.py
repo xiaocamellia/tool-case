@@ -239,14 +239,17 @@ class InterferometerSimPanel(SimulationResultMixin, SimulationPlotMixin, QWidget
         
         self.edit_fc_custom = QLineEdit('2400000000')
         self.edit_fc_custom.setPlaceholderText('单位: Hz')
+        self.edit_fc_custom.textChanged.connect(self.update_wavelength)
         self.edit_fc_custom.hide()
         layout.addWidget(self.edit_fc_custom, 0, 2)
-        
+
         layout.addWidget(QLabel('默认SNR (dB):'), 1, 0)
         self.spin_snr = QDoubleSpinBox()
         self.spin_snr.setRange(-30, 60)
         self.spin_snr.setValue(20)
         self.spin_snr.setDecimals(1)
+        self.spin_snr.setToolTip('修改后同步到目标信号表的 SNR 列')
+        self.spin_snr.valueChanged.connect(self._on_default_snr_changed)
         layout.addWidget(self.spin_snr, 1, 1)
         
         layout.addWidget(QLabel('快拍数:'), 2, 0)
@@ -508,7 +511,7 @@ class InterferometerSimPanel(SimulationResultMixin, SimulationPlotMixin, QWidget
     def on_fc_changed(self, idx):
         self.edit_fc_custom.setVisible(idx == self.combo_fc.count() - 1)
         self.update_wavelength()
-    
+
     def get_fc(self):
         idx = self.combo_fc.currentIndex()
         if idx == 0:
@@ -520,15 +523,34 @@ class InterferometerSimPanel(SimulationResultMixin, SimulationPlotMixin, QWidget
         elif idx == 3:
             return 10e9
         else:
+            text = self.edit_fc_custom.text().strip().replace(',', '')
             try:
-                return float(self.edit_fc_custom.text())
+                fc = float(text)
             except ValueError:
-                return 2.4e9
-    
+                raise ValueError('自定义载波频率必须是数值（单位 Hz）')
+            if not np.isfinite(fc) or fc <= 0:
+                raise ValueError('自定义载波频率必须是大于 0 的有限数值（单位 Hz）')
+            return fc
+
     def update_wavelength(self):
-        fc = self.get_fc()
+        try:
+            fc = self.get_fc()
+        except ValueError:
+            self.lbl_wavelength.setText('—')
+            return
         lambda_ = C / fc
         self.lbl_wavelength.setText(f'{lambda_:.4f} m')
+
+    def _on_default_snr_changed(self, value):
+        """默认SNR 同步到目标信号表的 SNR 列，保证该设置对仿真生效。"""
+        if not hasattr(self, 'target_table'):
+            return
+        self.target_table.blockSignals(True)
+        for row in range(self.target_table.rowCount()):
+            item = QTableWidgetItem(f'{value:g}')
+            item.setTextAlignment(Qt.AlignCenter)
+            self.target_table.setItem(row, 4, item)
+        self.target_table.blockSignals(False)
     
     def on_array_type_changed(self, idx):
         """阵列类型切换时显示/隐藏对应参数"""
@@ -610,8 +632,10 @@ class InterferometerSimPanel(SimulationResultMixin, SimulationPlotMixin, QWidget
             dy = self.spin_d2.value()
             return create_rect_array(N, cols, dx, dy)
         else:
-            # 自定义坐标，使用默认ULA
-            return create_ula(4, C / self.get_fc() / 2)
+            # 自定义坐标：使用用户编辑的坐标
+            if self._custom_coords is not None and len(self._custom_coords) > 0:
+                return np.array(self._custom_coords, dtype=float)
+            return create_ula(4, C / 2.4e9 / 2)
     
     def _load_default_array(self):
         """加载默认阵列并更新阵列布局图"""
@@ -769,15 +793,23 @@ class InterferometerSimPanel(SimulationResultMixin, SimulationPlotMixin, QWidget
     
     def run_simulation(self):
         """运行单次仿真"""
+        if self.combo_array_type.currentIndex() == 4 and self._custom_coords is None:
+            QMessageBox.warning(self, '错误', '请先点击「编辑坐标」设置自定义阵元坐标')
+            return
         if self.array_pos is None:
             QMessageBox.warning(self, '错误', '请先配置阵列')
             return
         if self._sim_thread is not None:
             QMessageBox.information(self, '提示', '仿真正在运行，请稍候。')
             return
-        
+
         try:
             fc = self.get_fc()
+        except ValueError as e:
+            QMessageBox.warning(self, '错误', str(e))
+            return
+
+        try:
             fs = 100e6
             T = self.spin_snapshots.value() / fs
             signals = self.get_targets()
@@ -979,15 +1011,23 @@ class InterferometerSimPanel(SimulationResultMixin, SimulationPlotMixin, QWidget
     
     def run_monte_carlo(self):
         """运行蒙特卡洛仿真"""
+        if self.combo_array_type.currentIndex() == 4 and self._custom_coords is None:
+            QMessageBox.warning(self, '错误', '请先点击「编辑坐标」设置自定义阵元坐标')
+            return
         if self.array_pos is None:
             QMessageBox.warning(self, '错误', '请先配置阵列')
             return
         if self._mc_thread is not None:
             QMessageBox.information(self, '提示', '蒙特卡洛分析正在运行，请稍候。')
             return
-        
+
         try:
             fc = self.get_fc()
+        except ValueError as e:
+            QMessageBox.warning(self, '错误', str(e))
+            return
+
+        try:
             fs = 100e6
             T = self.spin_snapshots.value() / fs
             signals = self.get_targets()

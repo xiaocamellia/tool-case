@@ -47,3 +47,4 @@ venv/
 
 # Local scratch files
 tmp*.json
+PACKAGING_GUIDE.md

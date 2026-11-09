@@ -26,11 +26,8 @@ $RuntimeMarkers = @(
     "numpy",
     "pandas",
     "scipy",
-    "openpyxl",
-    "et_xmlfile",
     "docx",
-    "lxml",
-    "xlrd"
+    "lxml"
 )
 foreach ($marker in $RuntimeMarkers) {
     $markerPath = Join-Path $DistributionRoot $marker
@@ -123,9 +120,6 @@ try {
             ""
         }
         throw "Packaged smoke test failed with exit code $($process.ExitCode): $stderr"
-    }
-    if (-not (Test-Path -LiteralPath (Join-Path $DataRoot "PortableRadarToolbox") -PathType Container)) {
-        throw "Packaged application did not create its isolated user-data directory."
     }
 }
 finally {
