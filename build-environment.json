@@ -4,6 +4,6 @@
   "python_implementation": "CPython",
   "python_architecture": "64bit",
   "nuitka_version": "4.1.3",
-  "msvc_version": "14.3",
+  "msvc_version": "latest",
   "platform": "Windows x86_64"
 }
