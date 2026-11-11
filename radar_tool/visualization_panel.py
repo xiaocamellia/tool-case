@@ -15,7 +15,8 @@ from PyQt5.QtWidgets import (
     QPushButton, QFileDialog, QLabel, QSpinBox, QListWidget,
     QListWidgetItem, QGroupBox, QTextEdit,
     QCheckBox, QTabWidget, QComboBox, QLineEdit,
-    QMessageBox, QAbstractItemView,
+    QMessageBox, QAbstractItemView, QStackedWidget, QTableView,
+    QDialog, QDialogButtonBox, QFormLayout,
 )
 from PyQt5.QtCore import QObject, Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont, QColor
@@ -24,7 +25,11 @@ from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as Navigatio
 
 from .data_loader import DataLoader
 from .models import DatasetRecord, PlotDataItem, PlotViewRecord
-from .plotting import MatplotlibCanvas
+from .plotting import (
+    MatplotlibCanvas, ASPECT_PRESETS, EXPORT_WIDTH_PRESETS_CM, FIG_SIZE_PRESETS,
+    apply_figure_size, compact_series_label, default_export_basename,
+    resolve_figure_size, scaled_size_for_width, style_axes_legend,
+)
 from .ui_theme import (
     set_button_icon, style_primary_button, style_warning_button,
 )
@@ -54,6 +59,59 @@ def _load_dataset_payload(filepath):
         'col_file': col_file,
         'dataframe': dataframe,
     }
+
+
+from PyQt5.QtCore import QAbstractTableModel, QModelIndex
+
+
+class SeriesTableModel(QAbstractTableModel):
+    """只读表格模型：按列持有 numpy 数组，百万行也只在可见单元格取数。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._columns = []  # list[tuple[str, np.ndarray]]
+        self._row_count = 0
+
+    def set_series(self, columns):
+        """columns: [(表头, 一维数组), ...]"""
+        self.beginResetModel()
+        self._columns = list(columns)
+        self._row_count = max((len(values) for _h, values in self._columns), default=0)
+        self.endResetModel()
+
+    def rowCount(self, parent=QModelIndex()):
+        return 0 if parent.isValid() else self._row_count
+
+    def columnCount(self, parent=QModelIndex()):
+        if parent.isValid() or not self._columns:
+            return 0
+        return len(self._columns) + 1
+
+    def data(self, index, role=Qt.DisplayRole):
+        if not index.isValid() or role not in (Qt.DisplayRole, Qt.ToolTipRole):
+            return None
+        if index.column() == 0:
+            return index.row() + 1
+        values = self._columns[index.column() - 1][1]
+        row = index.row()
+        if row >= len(values):
+            return None
+        value = values[row]
+        if value is None:
+            return None
+        try:
+            if pd.isna(value):
+                return None
+        except (TypeError, ValueError):
+            pass
+        return f'{value:.6g}' if isinstance(value, float) else str(value)
+
+    def headerData(self, section, orientation, role=Qt.DisplayRole):
+        if role != Qt.DisplayRole:
+            return None
+        if orientation == Qt.Horizontal:
+            return '序号' if section == 0 else self._columns[section - 1][0]
+        return str(section + 1)
 
 
 class DatasetLoadWorker(QObject):
@@ -183,68 +241,105 @@ class VisualizationPanel(QWidget):
         right_widget = self._create_right_panel()
         splitter.addWidget(right_widget)
 
-        splitter.setStretchFactor(0, 1)
+        # 左侧数据管理面板保证底限宽度，不被右侧绘图区挤占
+        left_widget.setMinimumWidth(420)
+        splitter.setCollapsible(0, False)
+        splitter.setCollapsible(1, False)
+        splitter.setStretchFactor(0, 2)
         splitter.setStretchFactor(1, 3)
+        splitter.setSizes([620, 1500])
         layout.addWidget(splitter, 1)
+
+        self._relax_minimum_widths()
+
+    def _relax_minimum_widths(self):
+        """把控件最小尺寸压到上限以下，窗口缩小时布局可压缩而不是整窗被撑大。
+
+        只下调（不抬高）显式最小尺寸；控件的首选尺寸不变，正常窗口下外观不受影响。
+        """
+        from PyQt5.QtWidgets import (
+            QAbstractButton, QAbstractSpinBox, QComboBox, QLineEdit,
+            QAbstractItemView, QTextEdit,
+        )
+        width_caps = (
+            (QAbstractButton, 84),
+            (QComboBox, 96),
+            (QAbstractSpinBox, 72),
+            (QLineEdit, 80),
+        )
+        for widget_class, cap in width_caps:
+            for widget in self.findChildren(widget_class):
+                if widget.minimumSizeHint().width() > cap:
+                    widget.setMinimumWidth(cap)
+        for widget_class in (QAbstractItemView, QTextEdit):
+            for widget in self.findChildren(widget_class):
+                if widget.minimumSizeHint().height() > 80:
+                    widget.setMinimumHeight(80)
 
 
 
     def _create_top_controls(self):
         group = QGroupBox('数据控制')
-        layout = QHBoxLayout(group)
+        outer = QVBoxLayout(group)
+        row1 = QHBoxLayout()
+        row2 = QHBoxLayout()
 
         self.btn_load = QPushButton('📂 加载数据文件(可多选)')
         self.btn_load.clicked.connect(self.load_data_file)
         set_button_icon(self.btn_load, 'open')
         style_primary_button(self.btn_load)
-        layout.addWidget(self.btn_load)
+        row1.addWidget(self.btn_load)
 
         self.btn_load_col = QPushButton('📄 加载列名文件')
         self.btn_load_col.clicked.connect(self.load_column_file)
         set_button_icon(self.btn_load_col, 'file')
-        layout.addWidget(self.btn_load_col)
+        row1.addWidget(self.btn_load_col)
 
         self.btn_remove_dataset = QPushButton('🗑️ 移除当前数据集')
         self.btn_remove_dataset.clicked.connect(self.remove_active_dataset)
         set_button_icon(self.btn_remove_dataset, 'delete')
         style_warning_button(self.btn_remove_dataset)
-        layout.addWidget(self.btn_remove_dataset)
+        row1.addWidget(self.btn_remove_dataset)
 
         self.btn_clear_datasets = QPushButton('🧹 清空全部数据集')
         self.btn_clear_datasets.clicked.connect(self.clear_all_datasets)
         set_button_icon(self.btn_clear_datasets, 'delete')
         style_warning_button(self.btn_clear_datasets)
-        layout.addWidget(self.btn_clear_datasets)
+        row1.addWidget(self.btn_clear_datasets)
 
-        layout.addWidget(QLabel('  数据文件:'))
+        row1.addWidget(QLabel('  数据文件:'))
         self.lbl_data_file = QLabel('未加载')
         self.lbl_data_file.setStyleSheet('color: gray;')
-        layout.addWidget(self.lbl_data_file, 1)
+        row1.addWidget(self.lbl_data_file, 1)
 
-        layout.addStretch()
+        row2.addStretch()
 
         self.btn_clear_overlay = QPushButton('🗑️ 清除叠加')
         self.btn_clear_overlay.clicked.connect(self.clear_overlay)
         set_button_icon(self.btn_clear_overlay, 'clear')
-        layout.addWidget(self.btn_clear_overlay)
+        row2.addWidget(self.btn_clear_overlay)
 
         self.btn_export = QPushButton('⬇ 导出高清图')
         self.btn_export.clicked.connect(self.export_current_plot)
         set_button_icon(self.btn_export, 'save')
         style_primary_button(self.btn_export)
-        layout.addWidget(self.btn_export)
+        row2.addWidget(self.btn_export)
 
         self.btn_reset = QPushButton('🔄 重置')
         self.btn_reset.clicked.connect(self.reset_view)
         set_button_icon(self.btn_reset, 'reload')
-        layout.addWidget(self.btn_reset)
+        row2.addWidget(self.btn_reset)
 
+        outer.addLayout(row1)
+        outer.addLayout(row2)
         return group
 
 
     def _create_left_panel(self):
         widget = QWidget()
         layout = QVBoxLayout(widget)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(6)
 
         # ===== 数据集列表 =====
         dataset_group = QGroupBox('已加载数据集')
@@ -264,77 +359,92 @@ class VisualizationPanel(QWidget):
         self.btn_reload_active.clicked.connect(self.reload_active_dataset)
         set_button_icon(self.btn_reload_active, 'reload')
         dataset_btn_layout.addWidget(self.btn_reload_active)
+        dataset_btn_layout.addStretch()
         dataset_layout.addLayout(dataset_btn_layout)
 
-        layout.addWidget(dataset_group)
+        layout.addWidget(dataset_group, 1)
 
         # ===== 范围选择 =====
         range_group = QGroupBox('数据范围 (采样点索引)')
-        range_layout = QHBoxLayout(range_group)
+        range_outer = QVBoxLayout(range_group)
+        range_row1 = QHBoxLayout()
+        range_row2 = QHBoxLayout()
 
-        range_layout.addWidget(QLabel('起始:'))
+        range_row1.addWidget(QLabel('起始:'))
         self.spin_start = QSpinBox()
         self.spin_start.setRange(0, 999999)
         self.spin_start.setValue(0)
         self.spin_start.valueChanged.connect(self.on_range_changed)
-        range_layout.addWidget(self.spin_start)
+        range_row1.addWidget(self.spin_start)
 
-        range_layout.addWidget(QLabel('结束:'))
+        range_row1.addWidget(QLabel('结束:'))
         self.spin_end = QSpinBox()
         self.spin_end.setRange(0, 999999)
         self.spin_end.setValue(0)
         self.spin_end.setSpecialValueText('末尾')
         self.spin_end.valueChanged.connect(self.on_range_changed)
-        range_layout.addWidget(self.spin_end)
+        range_row1.addWidget(self.spin_end)
 
-        range_layout.addWidget(QLabel('  总行数:'))
+        range_row1.addWidget(QLabel('  总行数:'))
         self.lbl_total_rows = QLabel('0')
-        range_layout.addWidget(self.lbl_total_rows)
+        range_row1.addWidget(self.lbl_total_rows)
+        range_row1.addStretch()
 
         self.btn_save_range = QPushButton('保存范围预设')
         self.btn_save_range.clicked.connect(self.save_range_preset)
         set_button_icon(self.btn_save_range, 'save')
-        range_layout.addWidget(self.btn_save_range)
+        range_row2.addWidget(self.btn_save_range)
 
         self.btn_refresh_plot = QPushButton('按当前范围重绘对比图')
         self.btn_refresh_plot.clicked.connect(self.redraw_current_range_plot)
         set_button_icon(self.btn_refresh_plot, 'refresh')
         style_primary_button(self.btn_refresh_plot)
-        range_layout.addWidget(self.btn_refresh_plot)
+        range_row2.addWidget(self.btn_refresh_plot)
+        range_row2.addStretch()
+
+        range_outer.addLayout(range_row1)
+        range_outer.addLayout(range_row2)
 
         layout.addWidget(range_group)
 
         # ===== 数据过滤 =====
         filter_group = QGroupBox('数据过滤 (按值筛选行)')
-        filter_layout = QHBoxLayout(filter_group)
+        filter_outer = QVBoxLayout(filter_group)
+        filter_row1 = QHBoxLayout()
+        filter_row2 = QHBoxLayout()
 
-        filter_layout.addWidget(QLabel('列:'))
+        filter_row1.addWidget(QLabel('列:'))
         self.combo_filter_col = QComboBox()
         self.combo_filter_col.setMinimumWidth(120)
         self.combo_filter_col.currentIndexChanged.connect(self.on_filter_col_changed)
-        filter_layout.addWidget(self.combo_filter_col)
+        filter_row1.addWidget(self.combo_filter_col)
 
-        filter_layout.addWidget(QLabel('最小值:'))
+        filter_row1.addWidget(QLabel('最小值:'))
         self.edit_filter_min = QLineEdit()
         self.edit_filter_min.setPlaceholderText('不限制')
-        self.edit_filter_min.setMaximumWidth(80)
-        filter_layout.addWidget(self.edit_filter_min)
+        self.edit_filter_min.setMaximumWidth(110)
+        filter_row1.addWidget(self.edit_filter_min)
 
-        filter_layout.addWidget(QLabel('最大值:'))
+        filter_row1.addWidget(QLabel('最大值:'))
         self.edit_filter_max = QLineEdit()
         self.edit_filter_max.setPlaceholderText('不限制')
-        self.edit_filter_max.setMaximumWidth(80)
-        filter_layout.addWidget(self.edit_filter_max)
+        self.edit_filter_max.setMaximumWidth(110)
+        filter_row1.addWidget(self.edit_filter_max)
+        filter_row1.addStretch()
 
         self.btn_apply_filter = QPushButton('应用过滤')
         self.btn_apply_filter.clicked.connect(self.apply_filter)
         set_button_icon(self.btn_apply_filter, 'apply')
-        filter_layout.addWidget(self.btn_apply_filter)
+        filter_row2.addWidget(self.btn_apply_filter)
 
         self.btn_clear_filter = QPushButton('清除过滤')
         self.btn_clear_filter.clicked.connect(self.clear_filter)
         set_button_icon(self.btn_clear_filter, 'clear')
-        filter_layout.addWidget(self.btn_clear_filter)
+        filter_row2.addWidget(self.btn_clear_filter)
+        filter_row2.addStretch()
+
+        filter_outer.addLayout(filter_row1)
+        filter_outer.addLayout(filter_row2)
 
         layout.addWidget(filter_group)
 
@@ -358,22 +468,20 @@ class VisualizationPanel(QWidget):
         self.btn_add_to_plot.setStyleSheet('background-color: #4CAF50; color: white; font-weight: bold;')
         set_button_icon(self.btn_add_to_plot, 'play')
         select_btn_layout.addWidget(self.btn_add_to_plot)
-        select_layout.addLayout(select_btn_layout)
+        select_btn_layout.addStretch()
 
-        target_layout = QHBoxLayout()
-        target_layout.addWidget(QLabel('绘制到:'))
-        self.combo_plot_target = QComboBox()
-        self.combo_plot_target.setMinimumWidth(200)
-        self.combo_plot_target.setEnabled(False)
-        self.combo_plot_target.setToolTip('始终绑定到当前页签图')
-        target_layout.addWidget(self.combo_plot_target, 1)
-        select_layout.addLayout(target_layout)
+        # 绑定目标提示（曲线始终绑定到当前页签图，轻量标签不占整行）
+        self.lbl_plot_target = QLabel('绘制到: 图1')
+        self.lbl_plot_target.setStyleSheet('color: #64748b;')
+        self.lbl_plot_target.setToolTip('添加的曲线始终绑定到当前页签图')
+        select_btn_layout.addWidget(self.lbl_plot_target)
+        select_layout.addLayout(select_btn_layout)
 
         self.list_columns = QListWidget()
         self.list_columns.setSelectionMode(QAbstractItemView.MultiSelection)
         select_layout.addWidget(self.list_columns)
 
-        layout.addWidget(select_group, 1)
+        layout.addWidget(select_group, 2)
 
         # ===== 当前绘图项列表 =====
         plotlist_group = QGroupBox('当前绘图项')
@@ -393,10 +501,11 @@ class VisualizationPanel(QWidget):
         self.btn_clear_all_plots.clicked.connect(self.clear_all_plot_items)
         set_button_icon(self.btn_clear_all_plots, 'clear')
         btn_remove_layout.addWidget(self.btn_clear_all_plots)
+        btn_remove_layout.addStretch()
 
         plotlist_layout.addLayout(btn_remove_layout)
 
-        layout.addWidget(plotlist_group)
+        layout.addWidget(plotlist_group, 1)
 
         return widget
 
@@ -411,50 +520,75 @@ class VisualizationPanel(QWidget):
         self.plot_tabs.currentChanged.connect(self.on_plot_tab_changed)
         layout.addWidget(self.plot_tabs, 1)
 
-        # 绘图控制
+        # 绘图控制（两行布局，避免控件最小宽度把窗口横向撑大）
         ctrl_group = QGroupBox('绘图控制')
-        ctrl_layout = QHBoxLayout(ctrl_group)
+        ctrl_outer = QVBoxLayout(ctrl_group)
+        ctrl_row1 = QHBoxLayout()
+        ctrl_row2 = QHBoxLayout()
 
         self.btn_new_plot = QPushButton('🆕 新建图')
         self.btn_new_plot.clicked.connect(self.create_new_plot_view)
         set_button_icon(self.btn_new_plot, 'file')
-        ctrl_layout.addWidget(self.btn_new_plot)
+        ctrl_row1.addWidget(self.btn_new_plot)
 
         self.btn_remove_plot = QPushButton('🗑 删除当前图')
         self.btn_remove_plot.clicked.connect(self.remove_current_plot_view)
         set_button_icon(self.btn_remove_plot, 'delete')
         style_warning_button(self.btn_remove_plot)
-        ctrl_layout.addWidget(self.btn_remove_plot)
+        ctrl_row1.addWidget(self.btn_remove_plot)
 
         self.btn_plot = QPushButton('📊 绘制')
         self.btn_plot.clicked.connect(self.plot_data)
         self.btn_plot.setStyleSheet('background-color: #2196F3; color: white; font-weight: bold; padding: 8px;')
         set_button_icon(self.btn_plot, 'play')
         style_primary_button(self.btn_plot)
-        ctrl_layout.addWidget(self.btn_plot)
+        ctrl_row1.addWidget(self.btn_plot)
 
         self.btn_overlay = QPushButton('➕ 叠加绘制 (保持上一幅)')
         self.btn_overlay.clicked.connect(self.plot_data_overlay)
         self.btn_overlay.setStyleSheet('background-color: #FF9800; color: white; font-weight: bold;')
         set_button_icon(self.btn_overlay, 'refresh')
         style_warning_button(self.btn_overlay)
-        ctrl_layout.addWidget(self.btn_overlay)
+        ctrl_row1.addWidget(self.btn_overlay)
 
         self.chk_show_stats = QCheckBox('显示统计信息')
         self.chk_show_stats.setChecked(True)
-        ctrl_layout.addWidget(self.chk_show_stats)
+        ctrl_row2.addWidget(self.chk_show_stats)
 
         self.chk_grid = QCheckBox('网格')
         self.chk_grid.setChecked(True)
-        ctrl_layout.addWidget(self.chk_grid)
+        ctrl_row2.addWidget(self.chk_grid)
 
-        ctrl_layout.addStretch()
+        ctrl_row2.addWidget(QLabel('显示:'))
+        self.combo_display_mode = QComboBox()
+        self.combo_display_mode.addItems(['绘图', '表格'])
+        self.combo_display_mode.setToolTip('同一数据可在曲线图与数据表格之间切换')
+        self.combo_display_mode.currentIndexChanged.connect(self.on_display_mode_changed)
+        ctrl_row2.addWidget(self.combo_display_mode)
 
+        ctrl_row2.addWidget(QLabel('图片尺寸:'))
+        self.combo_fig_size = QComboBox()
+        self.combo_fig_size.addItems(list(FIG_SIZE_PRESETS))
+        self.combo_fig_size.setToolTip('绘图区尺寸预设')
+        self.combo_fig_size.currentIndexChanged.connect(self.on_figure_format_changed)
+        ctrl_row2.addWidget(self.combo_fig_size)
+
+        ctrl_row2.addWidget(QLabel('比例:'))
+        self.combo_aspect = QComboBox()
+        self.combo_aspect.addItems(list(ASPECT_PRESETS))
+        self.combo_aspect.setToolTip('绘图区纵横比')
+        self.combo_aspect.currentIndexChanged.connect(self.on_figure_format_changed)
+        ctrl_row2.addWidget(self.combo_aspect)
+
+        ctrl_row2.addStretch()
+
+        ctrl_outer.addLayout(ctrl_row1)
+        ctrl_outer.addLayout(ctrl_row2)
         layout.addWidget(ctrl_group)
 
         # 默认创建第1张图
         self._create_plot_view(name='图1', set_active=True)
-        self._refresh_plot_target_combo()
+        self._refresh_plot_target_indicator()
 
         return widget
 
@@ -478,8 +612,18 @@ class VisualizationPanel(QWidget):
         txt_stats.setFont(QFont('Consolas', 9))
         txt_stats.setText('(无数据)')
 
+        # 绘图 / 表格 双视图（表格使用轻量模型，大数据量不卡顿）
+        display_stack = QStackedWidget()
+        display_stack.addWidget(canvas)
+        table_model = SeriesTableModel(self)
+        table_view = QTableView()
+        table_view.setModel(table_model)
+        table_view.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        table_view.verticalHeader().setDefaultSectionSize(22)
+        display_stack.addWidget(table_view)
+
         tab_layout.addWidget(toolbar)
-        tab_layout.addWidget(canvas, 1)
+        tab_layout.addWidget(display_stack, 1)
         tab_layout.addWidget(txt_stats)
 
         tab_index = self.plot_tabs.addTab(tab, name)
@@ -491,6 +635,9 @@ class VisualizationPanel(QWidget):
             canvas=canvas,
             toolbar=toolbar,
             txt_stats=txt_stats,
+            display_stack=display_stack,
+            table_view=table_view,
+            table_model=table_model,
         )
 
         if set_active:
@@ -514,25 +661,13 @@ class VisualizationPanel(QWidget):
         return self.plot_views.get(view_id)
 
 
-    def _refresh_plot_target_combo(self):
-        if not hasattr(self, 'combo_plot_target'):
+    def _refresh_plot_target_indicator(self):
+        if not hasattr(self, 'lbl_plot_target'):
             return
         current_view_id = self._get_current_plot_view_id()
-        self.combo_plot_target.blockSignals(True)
-        self.combo_plot_target.clear()
-        for view_id in self._plot_tab_order:
-            view = self.plot_views.get(view_id)
-            if view is not None:
-                self.combo_plot_target.addItem(view.name, view_id)
-
-        set_index = 0
-        for i in range(self.combo_plot_target.count()):
-            if self.combo_plot_target.itemData(i) == current_view_id:
-                set_index = i
-                break
-        if self.combo_plot_target.count() > 0:
-            self.combo_plot_target.setCurrentIndex(set_index)
-        self.combo_plot_target.blockSignals(False)
+        view = self.plot_views.get(current_view_id) if current_view_id is not None else None
+        name = view.name if view is not None else '—'
+        self.lbl_plot_target.setText(f'绘制到: {name}')
 
 
     def on_plot_tab_changed(self, idx):
@@ -540,13 +675,51 @@ class VisualizationPanel(QWidget):
         view = self.plot_views.get(view_id)
         view_name = view.name if view else '未知'
         logger.debug(f'切换绘图页签: {view_name} (index={idx})')
-        self._refresh_plot_target_combo()
+        self._refresh_plot_target_indicator()
         self._update_plot_list()
+        if view is not None and view.display_stack is not None:
+            mode_idx = self.combo_display_mode.currentIndex() if hasattr(self, 'combo_display_mode') else 0
+            view.display_stack.setCurrentIndex(mode_idx)
+
+    def on_display_mode_changed(self, idx):
+        view = self._get_current_plot_view()
+        if view is None or view.display_stack is None:
+            return
+        view.display_stack.setCurrentIndex(idx)
+        if idx == 1:
+            self._update_table_view(view)
+        self.main_window.status_label.setText(
+            '已切换为表格显示' if idx == 1 else '已切换为绘图显示')
+
+    def on_figure_format_changed(self, _idx=None):
+        view = self._get_current_plot_view()
+        if view is None:
+            return
+        preset = self.combo_fig_size.currentText()
+        aspect = self.combo_aspect.currentText()
+        apply_figure_size(view.canvas.figure, preset, aspect)
+        view.canvas.figure.tight_layout(pad=1.2)
+        view.canvas.draw()
+        self.main_window.status_label.setText(f'图片尺寸: {preset} / 比例: {aspect}')
+
+    def _update_table_view(self, view):
+        """把当前图的绘图项数据刷新到表格模型（仅引用数组，不复制）。"""
+        if view is None or view.table_model is None:
+            return
+        columns = []
+        for pi in self.plot_items:
+            if pi.chart_id != view.view_id:
+                continue
+            data = pi.get_data(self.datasets)
+            if data is None:
+                continue
+            columns.append((pi.label, data))
+        view.table_model.set_series(columns)
 
 
     def create_new_plot_view(self):
         view_id = self._create_plot_view(set_active=True)
-        self._refresh_plot_target_combo()
+        self._refresh_plot_target_indicator()
         view = self.plot_views.get(view_id)
         if view is not None:
             logger.info(f'用户操作: 新建绘图页 — {view.name}')
@@ -576,7 +749,7 @@ class VisualizationPanel(QWidget):
         else:
             self.plot_tabs.setCurrentIndex(min(idx, self.plot_tabs.count() - 1))
 
-        self._refresh_plot_target_combo()
+        self._refresh_plot_target_indicator()
         self._update_plot_list()
         logger.info(f'用户操作: 删除绘图页 — {view_name}')
         self.main_window.status_label.setText(f'已删除绘图页: {view_name}')
@@ -1061,7 +1234,7 @@ class VisualizationPanel(QWidget):
                 start=start,
                 end=end,
                 color_idx=self._color_counter,
-                label=f"{dataset.label} | {col_name} [{start}:{end if end > 0 else 'end'}]",
+                label=compact_series_label(dataset.label, col_name),
                 chart_id=target_chart_id,
             )
             self.plot_items.append(pi)
@@ -1123,6 +1296,7 @@ class VisualizationPanel(QWidget):
         ax.clear()
         n_items = len([pi for pi in self.plot_items if pi.chart_id == current_view.view_id])
         self._do_plot(ax, current_view)
+        self._update_table_view(current_view)
         current_view.canvas.draw()
         logger.info(f'用户操作: 绘制图表 — {current_view.name} ({n_items} 条曲线)')
         self.main_window.status_label.setText(f'✅ 绘图完成: {current_view.name}')
@@ -1184,9 +1358,7 @@ class VisualizationPanel(QWidget):
         ax.margins(x=0.01)
 
         if plot_items:
-            legend = ax.legend(loc='best', fontsize=9, frameon=True, framealpha=0.95)
-            legend.get_frame().set_edgecolor('#cbd5e1')
-            legend.get_frame().set_linewidth(0.9)
+            style_axes_legend(ax)
         ax.set_xlabel('采样点 (128ms/点)', fontsize=11)
         ax.set_ylabel('数值', fontsize=11)
         ax.set_title('雷达数据曲线', fontsize=13, fontweight='bold')
@@ -1226,8 +1398,13 @@ class VisualizationPanel(QWidget):
             QMessageBox.information(self, '提示', msg)
             return
 
+        # 默认文件名：数据文件名 + 字段名
+        first_dataset = self.datasets.get(plot_items[0].dataset_id)
+        file_label = first_dataset.label if first_dataset is not None else 'plot'
+        default_name = default_export_basename(file_label, [pi.col_name for pi in plot_items])
+
         filepath, selected_filter = QFileDialog.getSaveFileName(
-            self, '导出高清图', '',
+            self, '导出高清图', f'{default_name}.png',
             'PNG 图片 (*.png);;PDF 矢量图 (*.pdf);;SVG 矢量图 (*.svg);;TIFF 图片 (*.tiff);;所有文件 (*.*)'
         )
         if not filepath:
@@ -1244,6 +1421,24 @@ class VisualizationPanel(QWidget):
                 filepath += '.tiff'
             else:
                 filepath += '.png'
+
+        # 导出尺寸选项（相对当前绘图尺寸等比缩放，保持纵横比）
+        target_width_cm = None
+        size_dialog = QDialog(self)
+        size_dialog.setWindowTitle('导出尺寸')
+        size_form = QFormLayout(size_dialog)
+        combo_export_size = QComboBox()
+        combo_export_size.addItems(list(EXPORT_WIDTH_PRESETS_CM))
+        combo_export_size.setToolTip('按目标宽度导出，高度自动等比缩放')
+        size_form.addRow('图片宽度:', combo_export_size)
+        size_buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        size_buttons.accepted.connect(size_dialog.accept)
+        size_buttons.rejected.connect(size_dialog.reject)
+        size_form.addRow(size_buttons)
+        if size_dialog.exec_() != QDialog.Accepted:
+            logger.info('用户操作: 取消导出图片（尺寸选择）')
+            return
+        target_width_cm = EXPORT_WIDTH_PRESETS_CM.get(combo_export_size.currentText())
 
         if self._export_thread is not None:
             self.main_window.status_label.setText('已有图片导出任务正在后台运行')
@@ -1264,6 +1459,14 @@ class VisualizationPanel(QWidget):
         except Exception as exc:
             handle_ui_exception(self, logger, '导出图片', exc)
             return
+
+        # 按导出尺寸临时缩放（保持纵横比），导出结束后恢复绘图区尺寸
+        self._export_restore_figsize = current_view.canvas.figure.get_size_inches()
+        if target_width_cm:
+            new_size = scaled_size_for_width(current_view.canvas.figure, target_width_cm)
+            current_view.canvas.figure.set_size_inches(new_size, forward=True)
+            current_view.canvas.figure.tight_layout(pad=1.2)
+            current_view.canvas.draw()
 
         thread = QThread(self)
         worker = FigureExportWorker(current_view.canvas.figure, filepath)
@@ -1324,6 +1527,14 @@ class VisualizationPanel(QWidget):
         self.main_window.status_label.setText(message)
 
     def _on_plot_export_thread_finished(self):
+        restore_size = getattr(self, '_export_restore_figsize', None)
+        if restore_size is not None:
+            current_view = self._get_current_plot_view()
+            if current_view is not None:
+                current_view.canvas.figure.set_size_inches(restore_size, forward=True)
+                current_view.canvas.figure.tight_layout(pad=1.2)
+                current_view.canvas.draw()
+            self._export_restore_figsize = None
         self._export_worker = None
         self._export_thread = None
         self.btn_export.setEnabled(True)

@@ -24,8 +24,8 @@ def test_release_version_and_build_environment_are_consistent():
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     build_script = (ROOT / "packaging/nuitka/build.ps1").read_text(encoding="utf-8")
 
-    assert radar_tool.__version__ == config["application_version"] == "1.1.0"
-    assert 'version = "1.1.0"' in pyproject
+    assert radar_tool.__version__ == config["application_version"] == "1.1.1"
+    assert 'version = "1.1.1"' in pyproject
     assert "--standalone" in build_script
     assert "--onefile" not in build_script
     assert "--nofollow-import-to=*.tests" in build_script
@@ -58,7 +58,7 @@ def test_release_metadata_generation_is_deterministic(tmp_path):
         "--release-dir",
         str(release_dir),
         "--version",
-        "1.1.0",
+        "1.1.1",
         "--source-date-epoch",
         "1700000000",
     ]

@@ -28,6 +28,7 @@ from .errors import ExportError, safe_exception_message
 from .schemas import TruthReviewConfig
 from .logger import get_logger
 from .ui_theme import set_button_icon, style_primary_button
+from .plotting import style_axes_legend
 from .compare_core import (
     MAX_PLOT_POINTS, METRIC_BY_KEY, METRIC_COLUMN_ALIASES, METRIC_DEFINITIONS, TruthReviewWorker, _compute_truth_review, _decimate_plot_arrays, _estimate_fixed_scale_alignment, _normalize_column_name, _paired_outlier_mask, _sample_mapping, find_metric_column, resample_gps_to_radar_cadence
 )
@@ -181,7 +182,7 @@ class ComparePlotMixin:
             ax.set_title(config['label'], fontsize=10, fontweight='bold')
             ax.set_xlabel('样点位置（GPS 由时间列 / 雷达周期换算）')
             ax.set_ylabel(config['unit'])
-            ax.legend(loc='best', fontsize=8)
+            style_axes_legend(ax)
             ax.grid(True, linestyle='--', alpha=0.22)
         figure.tight_layout(pad=1.1)
         self.compare_canvases['raw'].draw_idle()
@@ -220,7 +221,7 @@ class ComparePlotMixin:
             axis.set_title(config['label'], fontsize=10, fontweight='bold')
             axis.set_xlabel('雷达原始样点索引')
             axis.set_ylabel(config['unit'])
-            axis.legend(loc='best', fontsize=8)
+            style_axes_legend(axis)
             axis.grid(True, linestyle='--', alpha=0.22)
         figure.tight_layout(pad=1.1)
         self.compare_canvases['range'].draw_idle()
@@ -252,7 +253,7 @@ class ComparePlotMixin:
             axis.set_title(config['label'], fontsize=10, fontweight='bold')
             axis.set_xlabel('样点位置（每点为一个雷达采样周期）')
             axis.set_ylabel(config['unit'])
-            axis.legend(loc='best', fontsize=8)
+            style_axes_legend(axis)
             axis.grid(True, linestyle='--', alpha=0.22)
         figure.tight_layout(pad=1.1)
         self.compare_canvases['interpolation'].draw_idle()
@@ -274,7 +275,7 @@ class ComparePlotMixin:
                     mean_error, color='#dc2626', linewidth=1.0,
                     linestyle='--', label=f'平均差值 {mean_error:.6g}',
                 )
-                axis.legend(loc='best', fontsize=8)
+                style_axes_legend(axis)
             axis.axhline(0.0, color='#94a3b8', linewidth=0.8)
             axis.set_title(f"{item['config']['label']} - {title}", fontsize=10,
                            fontweight='bold')
@@ -302,7 +303,7 @@ class ComparePlotMixin:
                     linestyle='--', label='对齐后 GPS 真值',
                 )
                 ax.set_ylabel(config['unit'])
-                ax.legend(loc='best', fontsize=8)
+                style_axes_legend(ax)
             elif mode == 'error':
                 plot_sample, error = _decimate_plot_arrays(sample_axis, item['error'])
                 ax.plot(plot_sample, error, color='#0f766e', linewidth=1.2)
@@ -352,7 +353,7 @@ class ComparePlotMixin:
             ax.set_xlabel('X (m)')
             ax.set_ylabel('Y (m)')
             ax.set_title('雷达与真值轨迹', fontsize=11, fontweight='bold')
-            ax.legend(loc='best')
+            style_axes_legend(ax)
             ax.grid(True, linestyle='--', alpha=0.22)
         figure.tight_layout(pad=1.1)
         self.compare_canvases['trajectory'].draw_idle()
@@ -369,7 +370,7 @@ class ComparePlotMixin:
         ax.set_xticklabels(labels)
         ax.set_ylabel(METRIC_BY_KEY[self.combo_cmp_reference.currentData()]['unit'])
         ax.set_title('参考维度的对齐算法误差比较', fontsize=11, fontweight='bold')
-        ax.legend(loc='best')
+        style_axes_legend(ax)
         ax.grid(True, axis='y', linestyle='--', alpha=0.22)
         figure.tight_layout(pad=1.1)
         self.compare_canvases['algorithms'].draw_idle()

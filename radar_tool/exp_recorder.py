@@ -523,11 +523,13 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
         img_row = QHBoxLayout()
         btn_add_img = QPushButton('\U0001f5bc\ufe0f 添加截图')
         from .ui_theme import style_primary_button, style_warning_button
-        btn_add_img.clicked.connect(lambda f=frame: self._add_step_screenshot(f))
+        # clicked(bool) 信号会向单参 lambda 传入 checked 布尔值，
+        # 必须用零参 lambda 闭包捕获 frame，否则 frame 被覆盖导致静默失效
+        btn_add_img.clicked.connect(lambda: self._add_step_screenshot(frame))
         style_primary_button(btn_add_img)
         img_row.addWidget(btn_add_img)
         btn_remove_img = QPushButton('\u2716 移除选中')
-        btn_remove_img.clicked.connect(lambda f=frame: self._remove_step_screenshot(f))
+        btn_remove_img.clicked.connect(lambda: self._remove_step_screenshot(frame))
         style_warning_button(btn_remove_img)
         img_row.addWidget(btn_remove_img)
         img_row.addStretch()
@@ -566,31 +568,55 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
             return
         try:
             _validate_source_image(filepath)
-        except ValueError as exc:
+        except Exception as exc:
+            logger.warning('截图校验失败: %s', safe_exception_message(exc))
             QMessageBox.warning(self, '图片无法加载', f'所选图片不能使用：\n{exc}')
             return
         # 找到对应步骤的 widget
         for sw in self.step_widgets:
-            if sw['frame'] == frame:
+            if sw['frame'] is frame:
                 caption, ok = QInputDialog.getText(self, '添加截图', '图注说明（可选）:')
                 if not ok:
                     caption = ''
-                basename = os.path.basename(filepath)
+                try:
+                    # 添加时即复制到后台图片目录，便于统一管理，也防止源文件丢失
+                    item_data = self._normalize_image_item({'path': filepath, 'caption': caption})
+                    if item_data is None:
+                        item_data = {'path': filepath, 'caption': caption}
+                        stored_note = '（源文件待保存时入库）'
+                    else:
+                        stored_note = ''
+                except Exception as exc:
+                    logger.warning('截图入库失败: %s', safe_exception_message(exc))
+                    item_data = {'path': filepath, 'caption': caption}
+                    stored_note = '（源文件待保存时入库）'
+                stored_path = item_data.get('path', filepath)
+                basename = os.path.basename(stored_path)
                 display = f'🖼️ {basename}'
                 if caption:
                     display += f' → {caption}'
                 item = QListWidgetItem(display)
-                item.setData(Qt.UserRole, {'path': filepath, 'caption': caption})
-                item.setToolTip(f'{filepath}\n图注: {caption if caption else "（无）"}')
+                item.setData(Qt.UserRole, item_data)
+                item.setToolTip(f'{stored_path}\n图注: {caption if caption else "（无）"}{stored_note}')
                 sw['img_list'].addItem(item)
+                self._mark_record_dirty()
+                self.lbl_save_status.setText(f'🖼️ 已添加截图 {basename}')
                 break
+        else:
+            QMessageBox.warning(self, '添加失败', '未找到对应试验步骤，请重新添加步骤后再试。')
 
     def _remove_step_screenshot(self, frame):
         """移除指定步骤的选中截图"""
         for sw in self.step_widgets:
-            if sw['frame'] == frame:
-                for item in sw['img_list'].selectedItems():
+            if sw['frame'] is frame:
+                items = sw['img_list'].selectedItems()
+                if not items:
+                    self.lbl_save_status.setText('未选中任何截图')
+                    return
+                for item in items:
                     sw['img_list'].takeItem(sw['img_list'].row(item))
+                self._mark_record_dirty()
+                self.lbl_save_status.setText(f'🖼️ 已移除 {len(items)} 张截图')
                 break
 
     def _renumber_steps(self):
@@ -851,6 +877,7 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
         validate_experiment_id(self.current_record_id, '记录 ID')
 
         steps_data = []
+        dropped_images = 0
         for sw in self.step_widgets:
             step_images = []
             for i in range(sw['img_list'].count()):
@@ -860,6 +887,8 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
                     normalized = self._normalize_image_item(data)
                     if normalized:
                         step_images.append(normalized)
+                    else:
+                        dropped_images += 1
             steps_data.append({
                 'title': sw['title'].text(),
                 'desc': sw['desc'].toPlainText(),
@@ -885,7 +914,18 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
 
         self._save_data()
         self._refresh_tree()
-        self.lbl_save_status.setText('✅ 已保存 ' + datetime.datetime.now().strftime('%H:%M'))
+        saved_note = '✅ 已保存 ' + datetime.datetime.now().strftime('%H:%M')
+        if dropped_images:
+            saved_note += f'（⚠️ {dropped_images} 张截图入库失败）'
+            logger.warning('保存记录时 %s 张截图入库失败', dropped_images)
+            if not quiet:
+                QMessageBox.warning(
+                    self,
+                    '部分截图未保存',
+                    f'有 {dropped_images} 张截图无法复制到图片目录，本次保存未包含这些截图。\n'
+                    '请检查源图片是否仍然存在，然后重新添加。',
+                )
+        self.lbl_save_status.setText(saved_note)
         self._record_dirty = False
         logger.info(f'保存记录: {rec["title"]}')
         return True

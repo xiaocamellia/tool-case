@@ -156,9 +156,10 @@ class FormatConversionPanel(QWidget):
         splitter.setChildrenCollapsible(False)
         splitter.addWidget(self._create_control_area())
         splitter.addWidget(self._create_result_area())
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
-        splitter.setSizes([430, 950])
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 2)
+        # 左侧控制区按需求宽度起步并参与分配，避免被右侧结果区挤占
+        splitter.setSizes([520, 1000])
         root.addWidget(splitter, 1)
 
     def _create_control_area(self):

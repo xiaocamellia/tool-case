@@ -8,7 +8,7 @@ import os
 
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout,
-    QLabel, QTabWidget, QMessageBox,
+    QLabel, QTabWidget, QMessageBox, QApplication,
 )
 from PyQt5.QtCore import Qt
 
@@ -39,7 +39,15 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
         ):
             signal.connect(self._on_background_task_event)
         self.setWindowTitle(f'便携化工具箱 V{__version__}')
-        self.setGeometry(100, 100, 1400, 900)
+        # 显式最小尺寸防止子控件把窗口强制撑大；启动默认最大化以贴合屏幕，
+        # 还原尺寸按屏幕比例预设，保证窗口模式下也足够宽敞
+        screen = QApplication.primaryScreen().availableGeometry()
+        self.setMinimumSize(1024, 640)
+        self.resize(
+            max(1152, int(screen.width() * 0.88)),
+            max(720, int(screen.height() * 0.86)),
+        )
+        self.setWindowState(Qt.WindowMaximized)
 
         self.compare_test_df = None
         self.compare_test_original_df = None

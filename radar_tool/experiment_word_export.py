@@ -182,7 +182,7 @@ class WordExportMixin:
                 metadata['parameters'], ensure_ascii=False, sort_keys=True
             ),
         ]
-    def _add_record_section(self, doc, ns, record, record_index, img_quality, fig_counter):
+    def _add_record_section(self, doc, ns, record, record_index, img_quality, fig_counter, image_errors=None):
         """完整单条记录布局"""
         rec_title = record.get('title', f'记录{record_index + 1}')
         self._add_h2(doc, ns, f'第{record_index + 1}条记录：{rec_title}')
@@ -245,6 +245,8 @@ class WordExportMixin:
                             self._add_image_caption(doc, ns, fig_counter[0], caption_text)
                         except Exception as e:
                             logger.warning('图片插入失败: %s', e)
+                            if image_errors is not None:
+                                image_errors.append(os.path.basename(str(img_path)) or str(img_path))
 
         # 兼容旧版记录：旧数据可能仍保存在记录级 data/images
         legacy_data = record.get('data', '').strip()
@@ -279,6 +281,8 @@ class WordExportMixin:
                     self._add_image_caption(doc, ns, fig_counter[0], caption_text)
                 except Exception as e:
                     logger.warning('图片插入失败: %s', e)
+                    if image_errors is not None:
+                        image_errors.append(os.path.basename(str(img_path)) or str(img_path))
 
         # 试验结论与问题汇总
         conclusion = record.get('conclusion', '').strip()
@@ -480,14 +484,35 @@ class WordExportMixin:
                 run2._element.append(fldChar3)
                 doc.add_page_break()
 
-            # ---- 写入所有记录 ----
+            # ---- 写入所有记录（项目导出按任务分组，形成 项目→任务→记录 三级结构） ----
             rec_idx = 0
             fig_counter = [0]  # 全局图号计数器（跨记录连续编号）
-            for key, rec in recs_to_export.items():
-                if rec_idx > 0:
-                    doc.add_page_break()
-                self._add_record_section(doc, ns, rec, rec_idx, img_quality, fig_counter)
-                rec_idx += 1
+            image_errors = []
+            if level == 'project':
+                for t_id, task in self.projects[pid].get('tasks', {}).items():
+                    group = [
+                        rec for (key_t, _key_r), rec in recs_to_export.items()
+                        if key_t == t_id
+                    ]
+                    if not group:
+                        continue
+                    self._add_h1(doc, ns, f'任务：{task.get("name") or t_id}')
+                    for rec in group:
+                        if rec_idx > 0:
+                            doc.add_page_break()
+                        self._add_record_section(
+                            doc, ns, rec, rec_idx, img_quality, fig_counter, image_errors)
+                        rec_idx += 1
+            else:
+                if level == 'task':
+                    task = self.projects[pid]['tasks'][tid]
+                    self._add_h1(doc, ns, f'任务：{task.get("name") or tid}')
+                for rec in recs_to_export.values():
+                    if rec_idx > 0:
+                        doc.add_page_break()
+                    self._add_record_section(
+                        doc, ns, rec, rec_idx, img_quality, fig_counter, image_errors)
+                    rec_idx += 1
 
             # ---- 生成页眉（项目/任务名称，宋体小五中度灰居中） ----
             header_text = ''
@@ -559,10 +584,8 @@ class WordExportMixin:
                         if run.text.strip():
                             run.font.color.rgb = self._REPORT_STYLES['watermark_color']
 
-            # ---- 报告尾注 ----
-            doc.add_paragraph()
+            # ---- 导出元数据仅记入日志，不写入报告正文（避免小字提示干扰） ----
             total_records = len(recs_to_export)
-            now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
             export_metadata = build_export_metadata(
                 input_summary={
                     'scope': level,
@@ -580,15 +603,7 @@ class WordExportMixin:
                     'watermark_text': watermark_text,
                 },
             )
-            for metadata_line in self._export_metadata_lines(export_metadata):
-                self._add_endnote(doc, ns, metadata_line)
-            self._add_endnote(
-                doc,
-                ns,
-                f'生成工具：试验记录助手 | 总记录数：{total_records} 条 '
-                f'| 导出时间：{now_str}',
-            )
-            self._add_endnote(doc, ns, '— 本报告由「试验记录助手」自动生成 —')
+            logger.info('导出元数据: %s', json.dumps(export_metadata, ensure_ascii=False))
 
             # ---- 保存 ----
             doc.save(filepath)
@@ -597,11 +612,15 @@ class WordExportMixin:
                 style_name,
                 os.path.basename(filepath),
             )
-            QMessageBox.information(
-                self,
-                '导出成功',
-                f'Word文档已保存到:\n{os.path.basename(filepath)}',
-            )
+            message = f'Word文档已保存到:\n{os.path.basename(filepath)}'
+            if image_errors:
+                message += (
+                    f'\n\n⚠️ 有 {len(image_errors)} 张图片未能嵌入（文件缺失或已损坏）：\n'
+                    + '\n'.join(image_errors[:10])
+                )
+                if len(image_errors) > 10:
+                    message += f'\n…… 等共 {len(image_errors)} 张'
+            QMessageBox.information(self, '导出成功', message)
 
         except (OSError, ValueError, RuntimeError) as e:
             export_error = ExportError(

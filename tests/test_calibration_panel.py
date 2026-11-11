@@ -105,7 +105,7 @@ class CalibrationPanelTests(unittest.TestCase):
             ) as handle:
                 metadata = json.load(handle)
             self.assertEqual(exported['export_metadata'], metadata)
-            self.assertEqual(metadata['version'], '1.1.0')
+            self.assertEqual(metadata['version'], '1.1.1')
             self.assertEqual(metadata['schema_version'], 1)
             self.assertIn('generated_at', metadata)
             self.assertEqual(

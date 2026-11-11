@@ -95,3 +95,6 @@ class PlotViewRecord:
     canvas: object
     toolbar: NavigationToolbar
     txt_stats: QTextEdit
+    display_stack: object = None
+    table_view: object = None
+    table_model: object = None

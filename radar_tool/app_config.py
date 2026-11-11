@@ -9,8 +9,11 @@ COLORS = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'orange', 'purple', 'brown', 'pink'
 LINESTYLES = ['-', '--', '-.', ':']
 
 # matplotlib global rcParams configuration
+# 出图字体规范：西文 Times New Roman，中文宋体（font.family 列表按字形逐级回退）
 MATPLOTLIB_RC_PARAMS = {
-    'font.sans-serif': ['SimHei', 'Microsoft YaHei', 'WenQuanYi Micro Hei', 'Arial Unicode MS', 'DejaVu Sans'],
+    'font.family': ['Times New Roman', 'SimSun', 'STSong', 'DejaVu Serif'],
+    'font.serif': ['Times New Roman', 'SimSun', 'STSong', 'DejaVu Serif'],
+    'font.sans-serif': ['Times New Roman', 'SimSun', 'SimHei', 'Microsoft YaHei', 'DejaVu Sans'],
     'axes.unicode_minus': False,
     'figure.dpi': 160,
     'savefig.dpi': 600,

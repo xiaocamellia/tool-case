@@ -77,6 +77,49 @@ def test_visualization_checked_columns_can_be_added_without_selection():
     window.close()
 
 
+def test_visualization_table_mode_size_and_export_naming():
+    """表格视图、图片尺寸预设与导出默认命名（文件名+字段名）。"""
+    from radar_tool.plotting import compact_series_label, default_export_basename
+
+    app = _app()
+    window = MainWindow()
+    panel = window._tab_panels[0]
+    dataset_id = panel._register_loaded_dataset({
+        'filepath': '飞测数据.txt',
+        'label': '飞测数据.txt',
+        'col_file': '',
+        'dataframe': pd.DataFrame({'alpha': [1.0, 2.0, 3.0], 'beta': [4.0, 5.0, 6.0]}),
+    })
+    panel.set_active_dataset(dataset_id)
+    panel.list_columns.clearSelection()
+    panel.list_columns.item(0).setCheckState(Qt.Checked)
+    panel.list_columns.item(1).setCheckState(Qt.Checked)
+    panel.add_selected_to_plot()
+
+    # 图例标签为 文件名|字段 的紧凑形式，不含采样区间
+    assert panel.plot_items[0].label == compact_series_label('飞测数据.txt', 'alpha')
+    assert '[' not in panel.plot_items[0].label
+
+    panel.plot_data()
+    view = panel._get_current_plot_view()
+
+    # 切换到表格模式后模型须填充数据
+    panel.combo_display_mode.setCurrentIndex(1)
+    assert view.display_stack.currentIndex() == 1
+    model = view.table_model
+    assert model.rowCount() == 3
+    assert model.columnCount() == 3  # 序号 + 两条曲线
+
+    # 图片尺寸预设生效
+    panel.combo_fig_size.setCurrentIndex(2)  # 宽幅
+    w, h = view.canvas.figure.get_size_inches()
+    assert (round(w, 1), round(h, 1)) == (14.0, 8.5)
+
+    # 导出默认命名 = 数据文件名 + 字段名
+    assert default_export_basename('飞测数据.txt', ['alpha', 'beta']) == '飞测数据_alpha_beta'
+    window.close()
+
+
 def test_interferometer_clear_control_resets_result_panels():
     _app()
     panel = InterferometerSimPanel()

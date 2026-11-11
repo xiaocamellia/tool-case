@@ -51,8 +51,8 @@ class CalcPanel(QWidget):
         nav_layout.addWidget(QLabel('📂 计算器分类'))
 
         self.nav_list = QListWidget()
-        self.nav_list.setMinimumWidth(160)
-        self.nav_list.setMaximumWidth(200)
+        self.nav_list.setMinimumWidth(180)
+        self.nav_list.setMaximumWidth(320)
 
         calculators = [
             ('🔧 单位转换器', 0),
@@ -83,7 +83,9 @@ class CalcPanel(QWidget):
         splitter.addWidget(self.stack)
 
         splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 3)
+        splitter.setStretchFactor(1, 2)
+        splitter.setChildrenCollapsible(False)
+        splitter.setSizes([300, 1400])
         layout.addWidget(splitter, 1)
 
     def _switch_calc(self, idx):
