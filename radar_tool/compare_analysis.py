@@ -198,7 +198,7 @@ class CompareAnalysisMixin(CompareDataMixin, CompareWorkerMixin, ComparePlotMixi
         self.combo_cmp_truth_time_unit.setCurrentIndex(
             self.combo_cmp_truth_time_unit.findData('s')
         )
-        self.combo_cmp_truth_time_unit.currentIndexChanged.connect(self._invalidate_compare_result)
+        self.combo_cmp_truth_time_unit.currentIndexChanged.connect(self._on_time_unit_changed)
         layout.addWidget(self.combo_cmp_truth_time_unit, 2, 1)
 
         layout.addWidget(QLabel('GPS 插值方式'), 2, 2)

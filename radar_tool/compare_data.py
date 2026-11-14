@@ -141,6 +141,62 @@ class CompareDataMixin:
         )
         self.lbl_cmp_truth.setStyleSheet('color: #334155;')
         self._refresh_compare_column_combos()
+        self._detect_time_unit(dataframe)  # TR-02
+        self._invalidate_compare_result()
+
+    def _detect_time_unit(self, dataframe):
+        """TR-02: 按相邻样点时间差量级推断 GPS 时间单位。"""
+        import numpy as np
+        time_col = None
+        if hasattr(self, 'combo_cmp_truth_time'):
+            time_col = self.combo_cmp_truth_time.currentData()
+        if not time_col or time_col not in dataframe.columns:
+            return
+        try:
+            vals = dataframe[time_col].dropna().values
+            if len(vals) < 2:
+                return
+            diffs = np.diff(vals.astype(float))
+            diffs = diffs[diffs > 0]
+            if len(diffs) == 0:
+                return
+            median_diff = float(np.median(diffs))
+            # ≈0.128→秒 / ≈128→毫秒 / ≈128000→微秒
+            if 0.001 <= median_diff < 1:
+                unit = 's'
+            elif 1 <= median_diff < 1000:
+                unit = 'ms'
+            elif 1000 <= median_diff < 1_000_000:
+                unit = 'us'
+            else:
+                return
+            if hasattr(self, 'combo_cmp_truth_time_unit'):
+                idx = self.combo_cmp_truth_time_unit.findData(unit)
+                if idx >= 0:
+                    self.combo_cmp_truth_time_unit.setCurrentIndex(idx)
+                    # 添加推断标注
+                    if not hasattr(self, '_lbl_time_unit_hint'):
+                        from PyQt5.QtWidgets import QLabel
+                        self._lbl_time_unit_hint = QLabel('已按差值量级推断')
+                        self._lbl_time_unit_hint.setStyleSheet(
+                            'color: #16a34a; font-size: 10px;'
+                        )
+                        # 插入到时间单位行
+                        parent_layout = self.combo_cmp_truth_time_unit.parent().layout()
+                        if parent_layout is not None:
+                            parent_layout.addWidget(self._lbl_time_unit_hint, 2, 2)
+                    self._lbl_time_unit_hint.setText(
+                        f'已按差值量级推断（中位差值 {median_diff:.4g}）'
+                    )
+                    self._lbl_time_unit_hint.show()
+        except Exception:
+            pass
+
+    def _on_time_unit_changed(self):
+        """TR-02: 用户手动改选时间单位时隐藏推断提示。"""
+        hint = getattr(self, '_lbl_time_unit_hint', None)
+        if hint is not None:
+            hint.hide()
         self._invalidate_compare_result()
 
     def _set_compare_loading(self, loading):
