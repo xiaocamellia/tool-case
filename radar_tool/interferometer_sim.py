@@ -51,6 +51,7 @@ from .background_tasks import (
 )
 from .simulation_plot import SimulationPlotMixin
 from .simulation_results import SimulationResultMixin
+from .plotting import MatplotlibCanvas
 
 
 
@@ -432,6 +433,7 @@ class InterferometerSimPanel(SimulationResultMixin, SimulationPlotMixin, QWidget
             'ESPRIT (旋转不变子空间)',
         ])
         self.combo_algorithm.setCurrentIndex(1)
+        self.combo_algorithm.currentIndexChanged.connect(self._on_algorithm_changed)  # IF-02
         layout.addWidget(self.combo_algorithm, 1)
         
         self.chk_2d = QCheckBox('二维估计(同时估计方位+俯仰)')
@@ -483,6 +485,14 @@ class InterferometerSimPanel(SimulationResultMixin, SimulationPlotMixin, QWidget
         spectrum_layout.addWidget(self.spectrum_canvas, 1)
         
         self.result_tabs.addTab(spectrum_tab, '空间谱')
+
+        # IF-02: ESPRIT 估计页（仅 ESPRIT 算法时显示）
+        esprit_tab = QWidget()
+        esprit_layout = QVBoxLayout(esprit_tab)
+        self.esprit_canvas = MatplotlibCanvas(esprit_tab)
+        esprit_layout.addWidget(self.esprit_canvas)
+        self.result_tabs.addTab(esprit_tab, 'ESPRIT 估计')
+        self._esprit_tab_index = self.result_tabs.indexOf(esprit_tab)
         
         # Tab3: 蒙特卡洛结果
         mc_tab = QWidget()
@@ -572,6 +582,22 @@ class InterferometerSimPanel(SimulationResultMixin, SimulationPlotMixin, QWidget
             self.target_table.setItem(row, 4, item)
         self.target_table.blockSignals(False)
     
+    def _on_algorithm_changed(self, idx):
+        """IF-02: 选 ESPRIT 时隐藏空间谱页，显示 ESPRIT 估计页。"""
+        is_esprit = (idx == 2)
+        spectrum_idx = 1
+        if not hasattr(self, 'result_tabs'):
+            return
+        try:
+            if is_esprit:
+                self.result_tabs.setTabVisible(spectrum_idx, False)
+                self.result_tabs.setTabVisible(self._esprit_tab_index, True)
+            else:
+                self.result_tabs.setTabVisible(spectrum_idx, True)
+                self.result_tabs.setTabVisible(self._esprit_tab_index, False)
+        except AttributeError:
+            pass  # Qt < 5.15 不支持 setTabVisible
+
     def on_array_type_changed(self, idx):
         """阵列类型切换时显示/隐藏对应参数"""
         # 先全部隐藏
@@ -953,10 +979,11 @@ class InterferometerSimPanel(SimulationResultMixin, SimulationPlotMixin, QWidget
             phi_true = result['phi_true']
             targets = result.get('targets') or [{'theta': theta_true, 'phi': phi_true, 'freq': 0, 'snr': SNR}]
             self._plot_spectrum_2d(P, result['thetas'], result['phis'], theta_ests, phi_ests, targets)
+            is_esprit = 'ESPRIT' in str(result.get('algo_name', ''))
             stats_text = (
                 f"算法: {result['algo_name']}\n"
                 f"{self._format_targets_text(targets)}\n"
-                f"{self._format_estimates_2d_text(theta_ests, phi_ests)}\n"
+                f"{self._format_estimates_2d_text(theta_ests, phi_ests, is_esprit=is_esprit)}\n"
                 f"{self._format_matched_errors_2d_text(targets, theta_ests, phi_ests)}\n"
                 f"阵列: {ctx.get('array_name', '')}\n"
                 f"阵元数: {ctx.get('array_count', 0)}\n"
@@ -982,10 +1009,11 @@ class InterferometerSimPanel(SimulationResultMixin, SimulationPlotMixin, QWidget
             theta_true = result['theta_true']
             targets = result.get('targets') or [{'theta': theta_true, 'phi': 0, 'freq': 0, 'snr': SNR}]
             self._plot_spectrum(P, result['thetas'], theta_ests, targets)
+            is_esprit = 'ESPRIT' in str(result.get('algo_name', ''))
             stats_text = (
                 f"算法: {result['algo_name']}\n"
                 f"{self._format_targets_text(targets)}\n"
-                f"{self._format_estimates_1d_text(theta_ests)}\n"
+                f"{self._format_estimates_1d_text(theta_ests, is_esprit=is_esprit)}\n"
                 f"{self._format_matched_errors_1d_text(targets, theta_ests)}\n"
                 f"阵列: {ctx.get('array_name', '')}\n"
                 f"阵元数: {ctx.get('array_count', 0)}\n"

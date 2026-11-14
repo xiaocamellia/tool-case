@@ -26,12 +26,14 @@ class SimulationResultMixin:
             )
         return '\n'.join(lines)
 
-    def _format_estimates_1d_text(self, theta_ests):
-        return '\n'.join(f"估计峰{idx + 1}: θ={theta:.4f}°" for idx, theta in enumerate(theta_ests))
+    def _format_estimates_1d_text(self, theta_ests, is_esprit=False):
+        label = '估计角' if is_esprit else '估计峰'
+        return '\n'.join(f"{label}{idx + 1}: θ={theta:.4f}°" for idx, theta in enumerate(theta_ests))
 
-    def _format_estimates_2d_text(self, theta_ests, phi_ests):
+    def _format_estimates_2d_text(self, theta_ests, phi_ests, is_esprit=False):
+        label = '估计角' if is_esprit else '估计峰'
         return '\n'.join(
-            f"估计峰{idx + 1}: θ={theta:.4f}°, φ={phi:.4f}°"
+            f"{label}{idx + 1}: θ={theta:.4f}°, φ={phi:.4f}°"
             for idx, (theta, phi) in enumerate(zip(theta_ests, phi_ests))
         )
 
