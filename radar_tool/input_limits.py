@@ -25,6 +25,19 @@ class InputResourceError(DataLimitError):
     """Raised when an input exceeds a configured safety limit."""
 
 
+def _default_max_file_bytes():
+    """G-26: 从 settings_store 读取可配上限，默认 512 MB。"""
+    try:
+        from .settings_store import settings
+        mb = settings.get_int('limits/max_file_mb', 512)
+        return mb * 1024 * 1024
+    except Exception:
+        return 512 * 1024 * 1024
+
+
+MAX_FILE_SIZE = None  # None 表示取 _default_max_file_bytes()
+
+
 def display_name(filepath) -> str:
     return os.path.basename(os.fspath(filepath)) or '输入文件'
 
@@ -32,11 +45,19 @@ def display_name(filepath) -> str:
 def ensure_file_size(filepath, max_bytes=None, label: str = '输入文件') -> int:
     if max_bytes is None:
         max_bytes = MAX_FILE_SIZE
+    if max_bytes is None:
+        max_bytes = _default_max_file_bytes()
     try:
         size = os.path.getsize(filepath)
     except OSError as exc:
         raise InputResourceError(f'{label}大小无法检查') from exc
     if max_bytes is not None and size > max_bytes:
+        if max_bytes >= 1024 * 1024:
+            size_mb = size / (1024 * 1024)
+            limit_mb = max_bytes / (1024 * 1024)
+            raise InputResourceError(
+                f'{label} {size_mb:.0f} MB，超过上限 {limit_mb:.0f} MB'
+            )
         raise InputResourceError(
             f'{label}大小超限：允许 0~{max_bytes} 字节，当前 {size} 字节'
         )

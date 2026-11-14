@@ -204,9 +204,16 @@ class CompareDataMixin:
         return True
 
     def _load_compare_file(self, kind, filepath):
+        # G-26: 文件大小预检
+        from .input_limits import ensure_file_size, InputResourceError
+        label = '雷达数据' if kind == 'radar' else '真值数据'
+        try:
+            ensure_file_size(filepath, label=label)
+        except InputResourceError as exc:
+            self.status_label.setText(f'⚠ {exc}')
+            return
         if self._start_compare_file_load(kind, filepath):
             return
-        label = '雷达数据' if kind == 'radar' else '真值数据'
         action = f'加载{label}'
         try:
             payload = (
