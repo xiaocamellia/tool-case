@@ -105,6 +105,23 @@ class _RecordDialog(QDialog):
         self.rotation_extra = QLineEdit(
             str(record.rotation.get("rotation_type", "intrinsic") if record else "intrinsic")
         )
+        # CL-03: 独立四元数顺序下拉（仅 quaternion 显示）
+        self.quaternion_order = QComboBox()
+        self.quaternion_order.addItems(["wxyz", "xyzw"])
+        self.quaternion_order.setCurrentText("wxyz")
+        # CL-02: matrix 3×3 九格输入（默认单位阵）
+        self.matrix_grid = []
+        self.matrix_widget = QWidget()
+        grid_layout = QGridLayout(self.matrix_widget)
+        grid_layout.setContentsMargins(0, 0, 0, 0)
+        for r in range(3):
+            row_inputs = []
+            for c in range(3):
+                cell = QLineEdit("1.0" if r == c else "0.0")
+                cell.setMaximumWidth(60)
+                grid_layout.addWidget(cell, r, c)
+                row_inputs.append(cell)
+            self.matrix_grid.append(row_inputs)
         if record:
             kind = record.rotation.get("type", "rpy")
             index = self.rotation_type.findText(kind)
@@ -148,6 +165,15 @@ class _RecordDialog(QDialog):
         form.addRow("旋转类型", self.rotation_type)
         form.addRow("旋转值（逗号分隔）", self.rotation_value)
         form.addRow("欧拉顺序 / 旋转方式", _hbox_row(self.rotation_order, self.rotation_extra))
+        # CL-02: matrix 九格行
+        self.matrix_row_label = QLabel("矩阵 3×3（行优先）")
+        form.addRow(self.matrix_row_label, self.matrix_widget)
+        # CL-03: 四元数顺序行
+        self.quat_order_label = QLabel("四元数顺序")
+        form.addRow(self.quat_order_label, self.quaternion_order)
+        # 初始显隐
+        self.rotation_type.currentIndexChanged.connect(self._on_rotation_type_changed)
+        self._on_rotation_type_changed()
         form.addRow("平移（m，逗号分隔）", self.translation)
         form.addRow("σ 平移(m) / 旋转(″)", _hbox_row(self.sigma_t, self.sigma_r))
         form.addRow("status", self.status_combo)
@@ -171,16 +197,38 @@ class _RecordDialog(QDialog):
         else:
             self._relation_hint.setText("被变换系与结果系不能相同")
 
+    def _on_rotation_type_changed(self):
+        """CL-02+CL-03: 根据旋转类型动态显隐字段。"""
+        kind = self.rotation_type.currentText()
+        is_matrix = (kind == "matrix")
+        is_quat = (kind == "quaternion")
+        is_rpy = (kind == "rpy")
+        self.matrix_widget.setVisible(is_matrix)
+        self.matrix_row_label.setVisible(is_matrix)
+        self.rotation_value.setVisible(not is_matrix)
+        self.quaternion_order.setVisible(is_quat)
+        self.quat_order_label.setVisible(is_quat)
+        self.rotation_order.setVisible(is_rpy)
+        self.rotation_extra.setVisible(is_rpy)
+
     def result_payload(self) -> dict:
         kind = self.rotation_type.currentText()
-        values = [float(part.strip()) for part in self.rotation_value.text().split(",") if part.strip()]
+        if kind == "matrix":
+            # CL-02: 从九格读取 9 元
+            values = []
+            for r in range(3):
+                for c in range(3):
+                    values.append(float(self.matrix_grid[r][c].text().strip() or "0"))
+        else:
+            values = [float(part.strip()) for part in self.rotation_value.text().split(",") if part.strip()]
         rotation: dict = {"type": kind, "value": values}
         if kind == "rpy":
             rotation["order"] = self.rotation_order.text().strip() or "ZYX"
             rotation["rotation_type"] = self.rotation_extra.text().strip() or "intrinsic"
             rotation["unit"] = "deg"
         elif kind == "quaternion":
-            rotation["order"] = self.rotation_extra.text().strip() or "wxyz"
+            # CL-03: 用独立下拉而非 rotation_extra
+            rotation["order"] = self.quaternion_order.currentText()
         translation = [float(part.strip()) for part in self.translation.text().split(",") if part.strip()]
         payload = {
             "id": self.id_edit.text().strip(),
