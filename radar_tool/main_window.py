@@ -338,37 +338,112 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
         ]
 
     def closeEvent(self, event):
+        """[G-01+ER-06] 关闭事务：① 脏数据检查 → ② 等后台任务 → ③ 退出。"""
+        # ── 第 1 段：脏数据检查（必须在 wait_for_tasks 之前） ──
+        dirty_panels = self._collect_dirty_panels()
+        if dirty_panels:
+            names = '、'.join(dirty_panels)
+            reply = QMessageBox.question(
+                self,
+                '未保存的修改',
+                f'以下页面有未保存的修改：\n{names}\n\n是否保存后退出？',
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                QMessageBox.Save,
+            )
+            if reply == QMessageBox.Cancel:
+                event.ignore()
+                return
+            if reply == QMessageBox.Save:
+                if not self._save_all_dirty_panels():
+                    event.ignore()
+                    return
+
+        # ── 第 2 段：等后台任务 ──
         active = self.task_registry.active_snapshots(self)
         if not active:
+            self._flush_loggers()
             super().closeEvent(event)
             return
 
         event.ignore()
         requested = self.task_registry.cancel_active(self)
         requested_ids = {snapshot.task_id for snapshot in requested}
-        finished = self.task_registry.wait_for_tasks(
-            self, timeout_ms=3000
-        )
+        finished = self.task_registry.wait_for_tasks(self, timeout_ms=3000)
         snapshots = self.task_registry.active_snapshots(self)
         snapshots.extend(
             snapshot for snapshot in self.task_registry.snapshots(self)
-            if snapshot.task_id in requested_ids
-            and snapshot.completed
+            if snapshot.task_id in requested_ids and snapshot.completed
         )
-        details = '\n'.join(
-            TaskRegistry.describe(snapshot) for snapshot in snapshots
-        )
+        details = '\n'.join(TaskRegistry.describe(s) for s in snapshots)
+
         if finished:
-            QMessageBox.information(
-                self,
-                '后台任务已取消',
-                '关闭前已执行有界等待，所有后台任务均已结束。\n' + details,
-            )
-            event.accept()
+            self._flush_loggers()
+            super().closeEvent(event)
             return
-        QMessageBox.warning(
-            self,
-            '后台任务取消超时',
-            '已发送取消请求，但以下任务在 3 秒内仍未结束，请稍后重试关闭：\n'
-            + details,
+
+        # ── 超时：三选一 ──
+        msg = QMessageBox()
+        msg.setWindowTitle('后台任务取消超时')
+        msg.setText(
+            '以下任务在 3 秒内仍未结束：\n' + details +
+            '\n\n强制退出后，已产出的中间结果将丢失。'
         )
+        btn_wait = msg.addButton('继续等待', QMessageBox.AcceptRole)
+        btn_cancel_exit = msg.addButton('取消任务并退出', QMessageBox.DestructiveRole)
+        btn_force = msg.addButton('强制退出', QMessageBox.RejectRole)
+        msg.exec_()
+        clicked = msg.clickedButton()
+
+        if clicked == btn_wait:
+            self.close()
+            return
+        if clicked == btn_cancel_exit:
+            self.task_registry.cancel_active(self)
+            self.task_registry.wait_for_tasks(self, timeout_ms=3000)
+            self._flush_loggers()
+            super().closeEvent(event)
+            return
+        # 强制退出
+        self._flush_loggers()
+        super().closeEvent(event)
+
+    def _collect_dirty_panels(self):
+        """遍历页签收集有未保存修改的页面名（ER-06）。"""
+        dirty = []
+        for i, panel in enumerate(self._tab_panels):
+            if panel is None:
+                continue
+            check = getattr(panel, 'has_unsaved_changes', None)
+            if callable(check):
+                try:
+                    if check():
+                        dirty.append(self._tab_names[i])
+                except Exception:
+                    pass
+        return dirty
+
+    def _save_all_dirty_panels(self):
+        """尝试保存所有有脏数据的面板，返回是否全部成功（ER-06）。"""
+        for i, panel in enumerate(self._tab_panels):
+            if panel is None:
+                continue
+            check = getattr(panel, 'has_unsaved_changes', None)
+            save = getattr(panel, 'confirm_close', None)
+            if callable(check) and callable(save):
+                try:
+                    if check():
+                        if not save():
+                            return False
+                except Exception:
+                    return False
+        return True
+
+    @staticmethod
+    def _flush_loggers():
+        """退出前强制刷新日志 handler，确保日志落盘。"""
+        import logging
+        for handler in logging.getLogger('radar_tool').handlers:
+            try:
+                handler.flush()
+            except Exception:
+                pass

@@ -205,12 +205,9 @@ class BackgroundTaskRegistryTests(unittest.TestCase):
         ))
 
         event = QCloseEvent()
-        with patch('radar_tool.main_window.QMessageBox.information') as info:
-            window.closeEvent(event)
+        # [G-01+ER-06] 新版：任务结束后静默关闭，不再弹 QMessageBox.information
+        window.closeEvent(event)
         self.assertTrue(event.isAccepted())
-        message = info.call_args.args[2]
-        self.assertIn('关闭测试任务', message)
-        self.assertIn('已取消', message)
         self.assertTrue(thread.wait(1000))
         worker.deleteLater()
         thread.deleteLater()
