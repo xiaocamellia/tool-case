@@ -912,8 +912,16 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
         rec['conclusion'] = self.edit_conclusion.toPlainText()
         rec['updated'] = datetime.datetime.now().isoformat()
 
-        self._save_data()
+        ok, error = self._save_data()
         self._refresh_tree()
+        if not ok:
+            # ER-01: 保存失败不写 ✅
+            self.lbl_save_status.setText(f'⚠️ 保存失败：{error}')
+            self.lbl_save_status.setStyleSheet('color: #dc2626; font-weight: bold;')
+            if not quiet:
+                QMessageBox.warning(self, '保存失败', f'保存失败：{error}\n请检查数据目录权限后重试。')
+            return False
+        self.lbl_save_status.setStyleSheet('')
         saved_note = '✅ 已保存 ' + datetime.datetime.now().strftime('%H:%M')
         if dropped_images:
             saved_note += f'（⚠️ {dropped_images} 张截图入库失败）'
@@ -1331,14 +1339,14 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
     # ==================== 数据持久化 ====================
 
     def _save_data(self):
-        """保存数据到本地JSON文件（临时文件 + 原子替换）"""
+        """保存数据到本地JSON文件。ER-01: 返回 (ok, error)。"""
         if self.__dict__.get('_data_load_blocked', False):
-            raise RuntimeError('试验数据文件尚未成功隔离，禁止覆盖')
+            return False, '试验数据文件尚未成功隔离，禁止覆盖'
         try:
             projects = _normalize_projects_payload(self.projects)
         except ValueError as exc:
             logger.error('试验数据 Schema 校验失败: %s', exc)
-            raise
+            return False, f'Schema 校验失败: {exc}'
         payload = {
             'schema_version': EXPERIMENTS_SCHEMA_VERSION,
             'projects': projects,
@@ -1355,13 +1363,14 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
                     and os.path.lexists(filepath)
                 ):
                     self._data_load_blocked = True
-                    raise RuntimeError('无法隔离损坏的试验数据文件')
+                    return False, '无法隔离损坏的试验数据文件'
             os.makedirs(DATA_DIR, exist_ok=True)
             with open(temporary_path, 'w', encoding='utf-8') as f:
                 json.dump(payload, f, ensure_ascii=False, indent=2)
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(temporary_path, filepath)
+            return True, ''
         except Exception as e:
             logger.error(f'保存数据失败: {safe_exception_message(e)}')
             if os.path.exists(temporary_path):
@@ -1369,8 +1378,7 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
                     os.remove(temporary_path)
                 except OSError:
                     pass
-            if isinstance(e, RuntimeError):
-                raise
+            return False, safe_exception_message(e)
 
     def _load_data(self):
         """从本地JSON文件加载数据；失败时隔离损坏文件并保留内存数据"""
