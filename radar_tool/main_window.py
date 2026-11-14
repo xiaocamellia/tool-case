@@ -77,6 +77,9 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
         main_layout = QVBoxLayout(central)
 
         self.feature_tabs = QTabWidget()
+        # GM-01: 摸鱼栏按设置项决定是否注册（A-2，默认隐藏）
+        from .settings_store import settings
+        show_game = settings.get_bool('ui/show_game_tab', False)
         self._tab_factories = [
             self._create_viz_tab,
             self._create_compare_tab,
@@ -87,8 +90,6 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
             self._create_format_conversion_tab,
             self._create_recorder_tab,
             self._create_coord_ledger_tab,
-            # 摸鱼游戏入口已隐藏；如需恢复显示，取消下面两行注释
-            # self._create_game_tab,
         ]
         self._tab_names = [
             '数据可视化处理',
@@ -100,8 +101,10 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
             '格式转换',
             '📋 试验记录助手',
             '📐 坐标系账本',
-            # '🎮 摸鱼游戏',
         ]
+        if show_game:
+            self._tab_factories.append(self._create_game_tab)
+            self._tab_names.append('🎮 摸鱼游戏')
         self._tab_panels = [None] * len(self._tab_names)
         self._tab_loaded = [False] * len(self._tab_names)
         self._tab_failed = [False] * len(self._tab_names)  # G-02 第三态
