@@ -824,6 +824,7 @@ class _ArrayParamCalc(_BaseCalc):
                 self.rect_cols_label, self.spin_cols,
                 self.rect_dx_label, self.spin_dx,
                 self.rect_dy_label, self.spin_dy,
+                self.combo_d_unit,  # CC-02: 矩形模式也显示单位框
             ):
                 widget.show()
         elif is_uca:
