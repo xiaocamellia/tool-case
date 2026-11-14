@@ -654,10 +654,18 @@ class FormatConversionPanel(QWidget):
                 write_bytes_atomic(target, self.preview_result.data)
             else:
                 write_text_atomic(target, rows_to_tr_text(self.preview_result.rows))
-        except FormatConversionError as exc:
+        except (FormatConversionError, ExportError, OSError) as exc:
+            # FC-04: 按 errno 分文案
+            errno_val = getattr(exc, 'errno', None)
+            if errno_val == 13:  # EACCES / PermissionError
+                reason = '目录不可写，请检查权限或更换输出路径'
+            elif errno_val == 28:  # ENOSPC
+                reason = '磁盘空间不足'
+            else:
+                reason = safe_exception_message(exc)
             self._set_status('写入失败', 'error')
-            self.log_text.append(f'\n写入失败: {safe_exception_message(exc)}')
-            QMessageBox.critical(self, '转换失败', safe_exception_message(exc))
+            self.log_text.append(f'\n写入失败: {reason}')
+            self._set_status('写入失败', 'error')
             logger.exception('格式转换写入失败')
             return False
 
