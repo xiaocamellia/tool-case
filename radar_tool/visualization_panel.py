@@ -1047,6 +1047,21 @@ class VisualizationPanel(QWidget):
 
         dataset_id = dataset.dataset_id
         label = dataset.label
+        # VZ-02: 确认框，文案含数据集数与绘图项数
+        n_items = sum(1 for item in self.plot_items if item.dataset_id == dataset_id)
+        n_datasets = len(self.datasets)
+        reply = QMessageBox.question(
+            self,
+            '移除数据集',
+            f'将移除数据集「{label}」：\n'
+            f'  当前共 {n_datasets} 个数据集，本数据集含 {n_items} 个绘图项\n'
+            f'  移除后其所有绘图曲线将一并删除。\n\n确定移除？',
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+
         self.plot_items = [item for item in self.plot_items if item.dataset_id != dataset_id]
         self.datasets.pop(dataset_id, None)
         logger.info(f'用户操作: 移除数据集 — "{label}" (id={dataset_id})')
@@ -1076,6 +1091,29 @@ class VisualizationPanel(QWidget):
 
     def clear_all_datasets(self):
         n = len(self.datasets)
+        n_items = len(self.plot_items)
+        # VZ-02: >3 个数据集需输入数量确认
+        if n > 3:
+            from PyQt5.QtWidgets import QInputDialog
+            text, ok = QInputDialog.getText(
+                self,
+                '清空全部数据集',
+                f'将清空 {n} 个数据集（含 {n_items} 个绘图项），此操作不可撤销。\n'
+                f'请输入数据集数量 {n} 以确认：',
+            )
+            if not ok or text.strip() != str(n):
+                return
+        else:
+            reply = QMessageBox.question(
+                self,
+                '清空全部数据集',
+                f'将清空 {n} 个数据集（含 {n_items} 个绘图项），此操作不可撤销。\n\n确定清空？',
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply != QMessageBox.Yes:
+                return
+
         self.datasets.clear()
         self.active_dataset_id = None
         self.current_df = None
