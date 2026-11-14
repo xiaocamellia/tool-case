@@ -736,7 +736,11 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
         logger.info(f'新建任务: {name}')
 
     def _new_record(self):
-        """新建记录"""
+        """新建记录。ER-03: 先保存当前 dirty 记录，失败则中止。"""
+        # ER-03: 有 dirty 记录先保存
+        if self._has_current_record() and getattr(self, '_record_dirty', False):
+            if not self._save_current_record(quiet=False):
+                return  # 保存失败，中止新建
         # 找到第一个有task的项目
         pid = None
         tid = None
