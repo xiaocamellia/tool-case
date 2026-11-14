@@ -16,7 +16,6 @@ from . import __version__
 from .background_tasks import TaskRegistry
 from .compare_analysis import CompareAnalysisMixin
 from .ui_theme import MAIN_STYLESHEET, STATUSBAR_STYLE
-from .error_ui import handle_ui_exception
 from .logger import get_logger
 
 logger = get_logger('main_window')
@@ -105,6 +104,7 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
         ]
         self._tab_panels = [None] * len(self._tab_names)
         self._tab_loaded = [False] * len(self._tab_names)
+        self._tab_failed = [False] * len(self._tab_names)  # G-02 第三态
 
         # 第 0 页（可视化）立即创建并添加到 tabs
         panel0 = self._lazy_create_or_get_panel(0)
@@ -145,25 +145,82 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
     def _lazy_create_or_get_panel(self, index):
         if self._tab_loaded[index]:
             return self._tab_panels[index]
+        if self._tab_failed[index]:
+            # G-02: 已失败的页签，切回时直接显示缓存的错误页，不再重跑工厂
+            return self._tab_panels[index]
         try:
             panel = self._tab_factories[index]()
         except Exception as exc:
-            handle_ui_exception(
-                self,
-                logger,
-                f'{self._tab_names[index]} 页面加载',
-                exc,
-            )
-            return None
+            self._tab_failed[index] = True
+            logger.error(f'页签加载失败: {self._tab_names[index]}: {exc}')
+            error_page = self._build_error_page(index, exc)
+            self._tab_panels[index] = error_page
+            return error_page
         self._tab_loaded[index] = True
+        self._tab_failed[index] = False
         self._tab_panels[index] = panel
         logger.info(f'延迟加载: {self._tab_names[index]}')
         return panel
+
+    def _build_error_page(self, index, exc):
+        """G-02: 内联错误页 — 摘要 + 重试 + 查看日志，不弹模态。"""
+        from PyQt5.QtWidgets import QPushButton, QTextEdit
+        from PyQt5.QtCore import QUrl
+        from PyQt5.QtGui import QDesktopServices
+        from .logger import LOG_DIR
+
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setAlignment(Qt.AlignCenter)
+
+        title = QLabel(f'⚠ 「{self._tab_names[index]}」页面加载失败')
+        title.setStyleSheet('color: #dc2626; font-size: 14pt; font-weight: bold;')
+        title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title)
+
+        detail = QTextEdit()
+        detail.setReadOnly(True)
+        detail.setPlainText(str(exc))
+        detail.setMaximumHeight(100)
+        detail.setStyleSheet('color: #64748b; font-size: 10pt; border: 1px solid #e2e8f0;')
+        layout.addWidget(detail)
+
+        btn_row = QHBoxLayout()
+        btn_retry = QPushButton('重试')
+        btn_retry.setStyleSheet(
+            'QPushButton { background: #2563eb; color: white; padding: 8px 24px; '
+            'border-radius: 6px; font-size: 11pt; }'
+            'QPushButton:hover { background: #1d4ed8; }'
+        )
+        btn_retry.clicked.connect(lambda: self._retry_tab(index))
+        btn_row.addWidget(btn_retry)
+
+        btn_log = QPushButton('查看日志')
+        btn_log.setStyleSheet(
+            'QPushButton { background: #f5f7fb; color: #334155; padding: 8px 24px; '
+            'border: 1px solid #d7dee9; border-radius: 6px; font-size: 11pt; }'
+        )
+        btn_log.clicked.connect(lambda: QDesktopServices.openUrl(
+            QUrl.fromLocalFile(LOG_DIR)
+        ))
+        btn_row.addWidget(btn_log)
+        layout.addLayout(btn_row)
+        return page
+
+    def _retry_tab(self, index):
+        """G-02: 重试 — 清除失败标志，重新构建面板。"""
+        self._tab_failed[index] = False
+        self._tab_loaded[index] = False
+        self._tab_panels[index] = None
+        self._on_tab_changed(index)
 
     def _on_tab_changed(self, index):
         if index < 0 or index >= len(self._tab_names):
             return
         if self._tab_loaded[index]:
+            return
+        if self._tab_failed[index]:
+            # G-02: 已失败页签切回时不重跑工厂，错误页已在 _tab_panels 中
             return
         # G-07: 首次懒加载 — 等待光标 + 遮罩提示
         QApplication.setOverrideCursor(Qt.WaitCursor)
