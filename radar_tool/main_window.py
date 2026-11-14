@@ -7,7 +7,7 @@
 import os
 
 from PyQt5.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout,
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QTabWidget, QMessageBox, QApplication, QProgressBar,
 )
 from PyQt5.QtCore import Qt

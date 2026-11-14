@@ -247,6 +247,8 @@ class CompareWorkerMixin:
                 f"RMSE={metrics['rmse']:.4f}, 有效样点={metrics['count']}"
             )
             self.btn_cmp_export.setEnabled(True)
+            if hasattr(self, 'btn_cmp_auto_fill'):
+                self.btn_cmp_auto_fill.setEnabled(True)
             logger.info(
                 f"用户操作: [数据真值复核] 后台计算完成 — "
                 f"方法={output['mapping']['method']}, 维度={len(output['metric_results'])}"

@@ -291,6 +291,16 @@ class CompareAnalysisMixin(CompareDataMixin, CompareWorkerMixin, ComparePlotMixi
         set_button_icon(self.btn_cmp_run_fine, 'play')
         style_primary_button(self.btn_cmp_run_fine)
         actions_layout.addWidget(self.btn_cmp_run_fine)
+        # TR-01: 一键填充
+        self._bias_fill_snapshot = None
+        self.btn_cmp_auto_fill = QPushButton('用平均差值一键填充')
+        self.btn_cmp_auto_fill.clicked.connect(self._fill_bias_from_mean_error)
+        self.btn_cmp_auto_fill.setEnabled(False)
+        actions_layout.addWidget(self.btn_cmp_auto_fill)
+        self.btn_cmp_undo_fill = QPushButton('撤销填充')
+        self.btn_cmp_undo_fill.clicked.connect(self._undo_bias_fill)
+        self.btn_cmp_undo_fill.setEnabled(False)
+        actions_layout.addWidget(self.btn_cmp_undo_fill)
         self.btn_cmp_export = QPushButton('导出完整批次')
         self.btn_cmp_export.clicked.connect(self.export_compare_result)
         self.btn_cmp_export.setEnabled(False)
@@ -426,6 +436,34 @@ class CompareAnalysisMixin(CompareDataMixin, CompareWorkerMixin, ComparePlotMixi
         spin.setSuffix(f' {unit}')
         spin.setMinimumWidth(88)
         return spin
+
+    def _fill_bias_from_mean_error(self):
+        """TR-01: 用平均差值一键填充雷达修正框。"""
+        output = getattr(self, 'compare_last_output', None)
+        if not output:
+            return
+        self._bias_fill_snapshot = {}
+        ref_key = output.get('metrics_summary', {}).get('reference_metric', '')
+        metric_results = output.get('metric_results', {})
+        for key, widgets in self.compare_mapping_widgets.items():
+            if not widgets['enabled'].isChecked():
+                continue
+            self._bias_fill_snapshot[key] = widgets['radar_bias'].value()
+            mean_err = metric_results.get(key, {}).get('metrics', {}).get('mean_error', 0.0)
+            widgets['radar_bias'].setValue(-float(mean_err))
+        self.btn_cmp_undo_fill.setEnabled(True)
+        if hasattr(self, 'status_label'):
+            self.status_label.setText('已用平均差值填充雷达修正框')
+
+    def _undo_bias_fill(self):
+        """TR-01: 撤销填充。"""
+        if not getattr(self, '_bias_fill_snapshot', None):
+            return
+        for key, value in self._bias_fill_snapshot.items():
+            if key in self.compare_mapping_widgets:
+                self.compare_mapping_widgets[key]['radar_bias'].setValue(value)
+        self._bias_fill_snapshot = None
+        self.btn_cmp_undo_fill.setEnabled(False)
 
     def _create_compare_result_tabs(self):
         self.tabs_cmp_results = QTabWidget()
