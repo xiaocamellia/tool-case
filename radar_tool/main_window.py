@@ -87,6 +87,7 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
             self._create_calc_tab,
             self._create_format_conversion_tab,
             self._create_recorder_tab,
+            self._create_coord_ledger_tab,
             # 摸鱼游戏入口已隐藏；如需恢复显示，取消下面两行注释
             # self._create_game_tab,
         ]
@@ -99,6 +100,7 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
             '🧮 指标计算器',
             '格式转换',
             '📋 试验记录助手',
+            '📐 坐标系账本',
             # '🎮 摸鱼游戏',
         ]
         self._tab_panels = [None] * len(self._tab_names)
@@ -189,6 +191,10 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
     def _create_recorder_tab(self):
         from .exp_recorder import ExpRecorderPanel
         return ExpRecorderPanel(self)
+
+    def _create_coord_ledger_tab(self):
+        from .coord_ledger_panel import CoordinateLedgerPanel
+        return CoordinateLedgerPanel(self)
 
     def _create_game_tab(self):
         from .game_panel import GamePanel

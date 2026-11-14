@@ -1,0 +1,210 @@
+{
+  "schema": "coordinate_ledger",
+  "schema_version": 1,
+  "ledger": {
+    "name": "ST-2026 载荷坐标系账本",
+    "version": "1.0",
+    "unit_default": "m",
+    "angle_default": "deg",
+    "quaternion_order": "wxyz",
+    "euler_rotation": "intrinsic",
+    "judge": {
+      "warn_sigma": 1.0,
+      "fail_sigma": 3.0
+    },
+    "note": "示例账本"
+  },
+  "frames": [
+    {
+      "id": "body",
+      "type": "body",
+      "axis": "Z_UP",
+      "unit": "m",
+      "name": "本体坐标系",
+      "definition": "X 沿飞行方向，Z 指向地心，Y 右手法则"
+    },
+    {
+      "id": "star_tracker_1",
+      "type": "sensor",
+      "axis": "Z_FORWARD",
+      "unit": "m",
+      "name": "星敏1光轴系",
+      "definition": "Z 沿光轴，指向 +X 方向"
+    },
+    {
+      "id": "camera_panchro",
+      "type": "payload",
+      "axis": "Z_FORWARD",
+      "unit": "m",
+      "name": "全色相机视轴系",
+      "definition": "Z 沿视轴，对地指向"
+    },
+    {
+      "id": "sar_antenna",
+      "type": "payload",
+      "axis": "Z_UP",
+      "unit": "m",
+      "name": "SAR波束中心系",
+      "definition": "Z 沿波束中心，偏离对地方向 30°"
+    }
+  ],
+  "transforms": [
+    {
+      "id": "T_body_cam_design",
+      "from": "body",
+      "to": "camera_panchro",
+      "rotation": {
+        "type": "quaternion",
+        "value": [
+          0.7071068,
+          0.0,
+          0.0,
+          0.7071068
+        ]
+      },
+      "translation": [
+        0.0,
+        0.0,
+        1.2
+      ],
+      "sigma": {
+        "t": 0.0008,
+        "r_arcsec": 3.2
+      },
+      "status": "design",
+      "source": "ST-2026-JG-021 表3",
+      "effective": "图纸设计值",
+      "note": "结构图安装矩阵"
+    },
+    {
+      "id": "T_body_cam_cal_202605",
+      "from": "body",
+      "to": "camera_panchro",
+      "rotation": {
+        "type": "rpy",
+        "value": [
+          0.001,
+          -0.001,
+          89.998
+        ],
+        "order": "ZYX",
+        "rotation_type": "intrinsic",
+        "unit": "deg"
+      },
+      "translation": [
+        0.0,
+        0.002,
+        1.201
+      ],
+      "sigma": {
+        "t": 0.0004,
+        "r_arcsec": 1.8
+      },
+      "status": "calibrated",
+      "source": "ST-2026-BD-005 表2",
+      "effective": "2026-05 批次，常温"
+    },
+    {
+      "id": "T_body_st1_design",
+      "from": "body",
+      "to": "star_tracker_1",
+      "rotation": {
+        "type": "rpy",
+        "value": [
+          0,
+          90,
+          0
+        ],
+        "order": "ZYX",
+        "rotation_type": "intrinsic",
+        "unit": "deg"
+      },
+      "translation": [
+        0.3,
+        0.1,
+        0.9
+      ],
+      "sigma": {
+        "t": 0.0005,
+        "r_arcsec": 2.1
+      },
+      "status": "design",
+      "source": "ST-2026-JG-018 表2",
+      "effective": "图纸设计值"
+    },
+    {
+      "id": "T_st1_cam_design",
+      "from": "star_tracker_1",
+      "to": "camera_panchro",
+      "rotation": {
+        "type": "matrix",
+        "value": [
+          0,
+          0,
+          -1,
+          1,
+          0,
+          0,
+          0,
+          -1,
+          0
+        ]
+      },
+      "translation": [
+        -0.3,
+        -0.1,
+        -0.3
+      ],
+      "sigma": {
+        "t": 0.0006,
+        "r_arcsec": 1.4
+      },
+      "status": "design",
+      "source": "ST-2026-JG-021 表4",
+      "effective": "图纸设计值",
+      "note": "由 body→st1 与 body→cam 设计值导出"
+    },
+    {
+      "id": "T_body_sar_design",
+      "from": "body",
+      "to": "sar_antenna",
+      "rotation": {
+        "type": "rpy",
+        "value": [
+          30,
+          0,
+          0
+        ],
+        "order": "ZYX",
+        "rotation_type": "intrinsic",
+        "unit": "deg"
+      },
+      "translation": [
+        0.0,
+        0.5,
+        0.8
+      ],
+      "sigma": {
+        "t": 0.001,
+        "r_arcsec": 4.0
+      },
+      "status": "design",
+      "source": "ST-2026-JG-030 表1",
+      "effective": "图纸设计值"
+    }
+  ],
+  "limits": [
+    {
+      "id": "LIM_cam_sar_angle",
+      "kind": "angle_between",
+      "frames": [
+        "camera_panchro",
+        "sar_antenna"
+      ],
+      "expected": 30.0,
+      "tolerance": 0.1,
+      "unit": "deg",
+      "note": "SYS-REQ-0213 载荷间光轴夹角要求"
+    }
+  ]
+}

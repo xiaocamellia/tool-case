@@ -1,0 +1,2 @@
+id,from,to,qw,qx,qy,qz,tx,ty,tz,sigma_t,sigma_r_arcsec,status,source
+T_body_x1,body,camera_panchro,1.0,0.0,0.0,0.0,0.1,0.2,1.0,0.001,2.0,design,CAD-01

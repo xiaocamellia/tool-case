@@ -1,0 +1,106 @@
+﻿1:"""Offscreen integration test for the calibration panel workflow."""
+3:from __future__ import annotations
+5:import json
+6:import os
+7:import tempfile
+8:import time
+9:import unittest
+10:from unittest.mock import patch
+12:os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
+14:import numpy as np
+15:import pandas as pd
+16:from PyQt5.QtCore import QEventLoop
+17:from PyQt5.QtWidgets import QApplication
+19:from radar_tool.calibration_batch_store import CalibrationBatchStore, DEFAULT_FIXED_PARAMS
+20:from radar_tool.calibration_model import simulate_angles
+21:from radar_tool.calibration_panel import CalibrationPanel
+22:from radar_tool.run import configure_matplotlib
+25:class CalibrationPanelTests(unittest.TestCase):
+26:    @classmethod
+27:    def setUpClass(cls):
+28:        configure_matplotlib()
+29:        cls.app = QApplication.instance() or QApplication([])
+31:    def test_load_run_and_render_results(self):
+32:        with tempfile.TemporaryDirectory() as directory:
+33:            az_true = np.linspace(-45.0, 45.0, 60)
+34:            el_true = np.linspace(-15.0, 15.0, 60)
+35:            az_meas, el_meas = simulate_angles(
+36:                18.25, -7.5, az_true, el_true, DEFAULT_FIXED_PARAMS)
+37:            data_path = os.path.join(directory, 'MeasData.csv')
+38:            pd.DataFrame({
+39:                'az_true': az_true,
+40:                'el_true': el_true,
+41:                'az_meas': az_meas,
+42:                'el_meas': el_meas,
+43:            }).to_csv(data_path, index=False)
+45:            store = CalibrationBatchStore(os.path.join(directory, 'batch_configs.json'))
+46:            panel = CalibrationPanel(batch_store=store)
+47:            panel.resize(1380, 820)
+48:            panel.show()
+49:            panel.edit_data_path.setText(data_path)
+50:            panel._start_calibration()
+52:            completed = []
+53:            panel._calibration_thread.finished.connect(
+54:                lambda: completed.append(True)
+55:            )
+56:            deadline = time.monotonic() + 10
+57:            while not completed and time.monotonic() < deadline:
+58:                self.app.processEvents(QEventLoop.AllEvents, 50)
+59:                time.sleep(0.001)
+60:            self.app.processEvents()
+61:            self.assertTrue(
+62:                completed,
+63:                "测向校准后台任务超过 10 秒仍未结束",
+64:            )
+66:            self.assertIsNotNone(panel.result)
+67:            self.assertAlmostEqual(
+68:                panel.result['optimized_params']['yy_r4_ZT'], 18.25, places=4)
+69:            self.assertAlmostEqual(
+70:                panel.result['optimized_params']['zz_r4_ZT'], -7.5, places=4)
+71:            self.assertTrue(panel.btn_export.isEnabled())
+72:            self.assertTrue(panel.btn_apply_result.isEnabled())
+73:            self.assertEqual(panel.metrics_table.rowCount(), 8)
+74:            export_path = os.path.join(directory, 'calibration_export.json')
+75:            with patch(
+76:                'radar_tool.calibration_panel.QFileDialog.getSaveFileName',
+77:                return_value=(export_path, 'JSON 结果 (*.json)'),
+78:            ), patch(
+79:                'radar_tool.calibration_panel.QMessageBox.information'
+80:            ):
+81:                panel._export_result()
+83:            batch_directory = os.path.splitext(export_path)[0]
+84:            expected_files = {
+85:                'calibration_export.json',
+86:                'calibration_export_样本明细.csv',
+87:                'calibration_export_误差曲线.png',
+88:                '00_导出元数据.json',
+89:            }
+90:            self.assertTrue(
+91:                expected_files.issubset(set(os.listdir(batch_directory)))
+92:            )
+93:            self.assertFalse([
+94:                name for name in os.listdir(directory)
+95:                if name.startswith('.calibration_export.tmp-')
+96:            ])
+97:            with open(
+98:                os.path.join(batch_directory, 'calibration_export.json'),
+99:                encoding='utf-8',
+100:            ) as handle:
+101:                exported = json.load(handle)
+102:            with open(
+103:                os.path.join(batch_directory, '00_导出元数据.json'),
+104:                encoding='utf-8',
+105:            ) as handle:
+106:                metadata = json.load(handle)
+107:            self.assertEqual(exported['export_metadata'], metadata)
+108:            self.assertEqual(metadata['version'], '1.1.1')
+109:            self.assertEqual(metadata['schema_version'], 1)
+110:            self.assertIn('generated_at', metadata)
+111:            self.assertEqual(
+112:                metadata['input_summary']['source_file'], 'MeasData.csv'
+113:            )
+114:            self.assertIn('optimized_params', metadata['parameters'])
+115:            panel.close()
+116:            self.app.processEvents()
+119:if __name__ == '__main__':
+120:    unittest.main()

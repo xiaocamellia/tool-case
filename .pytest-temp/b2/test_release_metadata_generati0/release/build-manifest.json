@@ -1,0 +1,30 @@
+{
+  "application": {
+    "name": "Portable Radar Toolbox",
+    "version": "1.1.1"
+  },
+  "artifacts": [
+    {
+      "path": "sbom.cdx.json",
+      "sha256": "c3c340b54c3a2d234023de561c7064f9e670f1ed5a3b6d842a2a01911649d427",
+      "size": 6623
+    },
+    {
+      "path": "third-party-components.json",
+      "sha256": "343a4653c7c44fdccb42f840ef5baf29b7b03d614f7ae9602b53c4406fe6d369",
+      "size": 6173
+    }
+  ],
+  "build": {
+    "generated_at": "2023-11-14T22:13:20Z",
+    "platform": "Windows-11-10.0.26300-SP0",
+    "python": {
+      "architecture": "64bit",
+      "implementation": "CPython",
+      "version": "3.12.7"
+    },
+    "source_date_epoch": 1700000000,
+    "source_sha256": "4ebf04b417bae0b93a04464812a14d4f28c784c3c288752f8feb9eae4d7dd75c"
+  },
+  "format": "portable-radar-toolbox-build-manifest/v1"
+}

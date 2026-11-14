@@ -31,6 +31,28 @@ def test_all_lazy_application_tabs_initialize_offscreen():
     run_smoke_test()
 
 
+def test_coord_ledger_3d_scene_survives_isolated_frame():
+    """删除变换后孤立坐标系不应让 3D 场景构建崩溃（回归）。"""
+    _app()
+    from radar_tool.coord_3d import Coord3DView
+    from radar_tool.coord_core import Ledger
+    from radar_tool.coord_ledger_panel import CoordinateLedgerPanel
+
+    panel = CoordinateLedgerPanel(None)
+    panel.ledger = Ledger.sample()
+    panel._refresh_all()
+    panel.ledger.document.transforms = [
+        record for record in panel.ledger.transforms()
+        if record.id != "T_body_sar_design"
+    ]
+    panel.ledger.invalidate()
+    panel._3d_loaded = True
+    panel._3d_view = Coord3DView()
+    panel._refresh_3d_scene()            # 不应抛错
+    assert "sar_antenna" in panel._3d_unreachable
+    assert len(panel._3d_view.frames) == 3
+
+
 def test_calculator_navigation_switches_every_formula_page():
     app = _app()
     panel = CalcPanel()
