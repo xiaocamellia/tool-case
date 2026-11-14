@@ -216,6 +216,20 @@ class ArrayDesignerPanel(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.itemChanged.connect(self._on_table_edit)
         left_layout.addWidget(QLabel('阵元坐标'))
+        # AR-01: 坐标来源标签与恢复按钮
+        mode_row = QHBoxLayout()
+        self._lbl_mode = QLabel('来源: 模板生成')
+        self._lbl_mode.setStyleSheet('color: #16a34a; font-size: 10px;')
+        mode_row.addWidget(self._lbl_mode)
+        self._btn_restore_template = QPushButton('恢复模板')
+        self._btn_restore_template.setStyleSheet(
+            'QPushButton { font-size: 10px; padding: 2px 8px; }'
+        )
+        self._btn_restore_template.clicked.connect(self._restore_template)
+        self._btn_restore_template.hide()
+        mode_row.addWidget(self._btn_restore_template)
+        mode_row.addStretch()
+        left_layout.addLayout(mode_row)
         left_layout.addWidget(self.table, 1)
 
         splitter.addWidget(left_widget)
@@ -302,6 +316,24 @@ class ArrayDesignerPanel(QWidget):
         self._on_param_change()
 
     def _on_template_change(self):
+        # AR-01: 手工态下切模板需确认
+        if getattr(self, '_is_manual_mode', False):
+            from PyQt5.QtWidgets import QMessageBox
+            reply = QMessageBox.question(
+                self,
+                '切换模板',
+                '当前为手工坐标模式，切换模板将重置所有坐标。\n\n确定切换？',
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply != QMessageBox.Yes:
+                # 恢复原来的模板选择
+                self.combo_template.blockSignals(True)
+                self.combo_template.setCurrentIndex(getattr(self, '_last_template_idx', 0))
+                self.combo_template.blockSignals(False)
+                return
+            self._is_manual_mode = False
+        self._last_template_idx = self.combo_template.currentIndex()
         idx = self.combo_template.currentIndex()
         is_custom = (idx == 5)
         is_uca = (idx == 1)
@@ -333,6 +365,9 @@ class ArrayDesignerPanel(QWidget):
             self.spin_N.blockSignals(False)
 
     def _on_param_change(self):
+        # AR-01: 手工态下参数变化不重建坐标
+        if getattr(self, '_is_manual_mode', False):
+            return
         if self.combo_template.currentIndex() == 2:
             self._sync_rect_count()
         self._generate_template()
@@ -779,9 +814,33 @@ class ArrayDesignerPanel(QWidget):
             return
 
         self.elements = parsed
+        # AR-01: 手工编辑后进入手工态
+        self._is_manual_mode = True
+        self._update_mode_label()
         self._plot_array()
         self._plot_pattern()
         self._update_metrics()
+
+    def _update_mode_label(self):
+        """AR-01: 显示当前坐标来源与恢复按钮。"""
+        if not hasattr(self, '_lbl_mode'):
+            return
+        if getattr(self, '_is_manual_mode', False):
+            self._lbl_mode.setText('来源: 手工坐标')
+            self._lbl_mode.setStyleSheet('color: #d97706; font-size: 10px;')
+            if hasattr(self, '_btn_restore_template'):
+                self._btn_restore_template.show()
+        else:
+            self._lbl_mode.setText('来源: 模板生成')
+            self._lbl_mode.setStyleSheet('color: #16a34a; font-size: 10px;')
+            if hasattr(self, '_btn_restore_template'):
+                self._btn_restore_template.hide()
+
+    def _restore_template(self):
+        """AR-01: 恢复模板坐标。"""
+        self._is_manual_mode = False
+        self._generate_template()
+        self._update_mode_label()
 
     def _edit_custom_coords(self):
         """打开自定义阵元坐标编辑对话框（参考干涉仪模块设计）"""
