@@ -237,9 +237,11 @@ class ArrayDesignerPanel(QWidget):
         self.chk_polar = QCheckBox('极坐标')
         view_layout.addWidget(self.chk_polar)
         self.combo_cut = QComboBox()
-        self.combo_cut.addItems(['方位面 (XY)', '俯仰面 (XZ)'])
+        # AR-02b: 文案如实描述投影轴（路径 B）
+        self.combo_cut.addItems(['方位面 (XY)', 'XZ 切面（沿 Y 投影）'])
+        self.combo_cut.setToolTip('单轴投影，非真实俯仰面；XZ 切面为沿 Y 轴的 sin(θ) 投影')
         view_layout.addWidget(self.combo_cut)
-        self.combo_cut.currentIndexChanged.connect(self._replot)
+        self.combo_cut.currentIndexChanged.connect(self._refresh_all)  # AR-02
         self.chk_polar.stateChanged.connect(self._replot)
         view_layout.addStretch()
         right_layout.addLayout(view_layout)
@@ -626,6 +628,13 @@ class ArrayDesignerPanel(QWidget):
         ax.set_aspect('equal')
         ax.grid(True, linestyle='--', alpha=0.3)
         self.array_canvas.draw()
+
+    def _refresh_all(self):
+        """AR-02: 切面变更时重绘 + 重算指标 + 更新极坐标视图，三者同源。"""
+        self._replot()
+        self._update_metrics()
+        if hasattr(self, '_update_polar_view'):
+            self._update_polar_view()
 
     def _replot(self):
         self._plot_pattern()
