@@ -1410,6 +1410,8 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
                 )
                 if not isinstance(self.__dict__.get('projects'), dict):
                     self.projects = {}
+                # ER-05: 加载失败红色常驻横幅
+                self._show_load_failure_banner(quarantined)
             else:
                 self._data_load_blocked = False
                 self.projects = projects
@@ -1418,6 +1420,37 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
             self._data_load_blocked = False
             if not isinstance(self.__dict__.get('projects'), dict):
                 self.projects = {}
+
+    def _show_load_failure_banner(self, quarantined_path):
+        """ER-05: 顶部红色常驻横幅提示加载失败。"""
+        if self.__dict__.get('_load_failure_banner'):
+            return
+        try:
+            from PyQt5.QtWidgets import QLabel, QHBoxLayout, QPushButton
+            from PyQt5.QtCore import QUrl
+            from PyQt5.QtGui import QDesktopServices
+            from .logger import LOG_DIR
+            banner = QWidget()
+            banner.setStyleSheet('background: #fef2f2; border-bottom: 2px solid #dc2626;')
+            layout = QHBoxLayout(banner)
+            layout.setContentsMargins(8, 4, 8, 4)
+            backup_name = os.path.basename(quarantined_path) if quarantined_path else '(未能隔离)'
+            msg = QLabel(f'⚠️ 试验数据加载失败，原文件已备份为 `{backup_name}`，当前列表为空。')
+            msg.setStyleSheet('color: #dc2626; font-weight: bold; font-size: 10pt;')
+            layout.addWidget(msg, 1)
+            btn_dir = QPushButton('打开数据目录')
+            btn_dir.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(LOG_DIR)))
+            layout.addWidget(btn_dir)
+            btn_close = QPushButton('✕')
+            btn_close.setFixedWidth(28)
+            btn_close.clicked.connect(banner.hide)
+            layout.addWidget(btn_close)
+            parent_layout = self.layout()
+            if parent_layout is not None:
+                parent_layout.insertWidget(0, banner)
+            self._load_failure_banner = banner
+        except Exception:
+            pass
 
     def statusBar(self):
         parent = self.parent()
