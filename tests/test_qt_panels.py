@@ -156,6 +156,7 @@ def test_interferometer_clear_control_resets_result_panels():
 
 def test_interferometer_custom_coords_and_default_snr_take_effect():
     import numpy as np
+    from unittest.mock import patch, MagicMock
 
     _app()
     panel = InterferometerSimPanel()
@@ -166,7 +167,10 @@ def test_interferometer_custom_coords_and_default_snr_take_effect():
     assert pos.shape == custom.shape
     assert np.allclose(pos, custom)
 
-    panel.spin_snr.setValue(5.0)
+    # [IF-01] 新行为：无选中时弹确认，mock 返回 Yes
+    from PyQt5.QtWidgets import QMessageBox
+    with patch('PyQt5.QtWidgets.QMessageBox.question', return_value=QMessageBox.Yes):
+        panel.spin_snr.setValue(5.0)
     assert panel.get_targets()[0]['snr'] == 5.0
     panel.close()
 

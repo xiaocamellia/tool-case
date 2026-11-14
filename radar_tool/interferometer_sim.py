@@ -542,11 +542,31 @@ class InterferometerSimPanel(SimulationResultMixin, SimulationPlotMixin, QWidget
         self.lbl_wavelength.setText(f'{lambda_:.4f} m')
 
     def _on_default_snr_changed(self, value):
-        """默认SNR 同步到目标信号表的 SNR 列，保证该设置对仿真生效。"""
+        """IF-01: 默认 SNR 仅作用于选中行；无选中时弹确认。"""
         if not hasattr(self, 'target_table'):
             return
+        selected_rows = set()
+        for idx in self.target_table.selectionModel().selectedRows():
+            selected_rows.add(idx.row())
+        n_rows = self.target_table.rowCount()
+        if selected_rows:
+            # 仅更新选中行
+            rows_to_update = sorted(selected_rows)
+        else:
+            # 无选中：弹确认
+            from PyQt5.QtWidgets import QMessageBox
+            reply = QMessageBox.question(
+                self,
+                '应用默认 SNR',
+                f'当前无选中行。是否将默认 SNR {value:g} 应用到全部 {n_rows} 行？',
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply != QMessageBox.Yes:
+                return
+            rows_to_update = list(range(n_rows))
         self.target_table.blockSignals(True)
-        for row in range(self.target_table.rowCount()):
+        for row in rows_to_update:
             item = QTableWidgetItem(f'{value:g}')
             item.setTextAlignment(Qt.AlignCenter)
             self.target_table.setItem(row, 4, item)
