@@ -518,6 +518,9 @@ class VisualizationPanel(QWidget):
         self.plot_tabs = QTabWidget()
         self.plot_tabs.setMovable(True)
         self.plot_tabs.currentChanged.connect(self.on_plot_tab_changed)
+        # VZ-01: tabMoved 在某些环境可能不可用，安全连接
+        if hasattr(self.plot_tabs, 'tabMoved'):
+            self.plot_tabs.tabMoved.connect(self._on_plot_tab_moved)
         layout.addWidget(self.plot_tabs, 1)
 
         # 绘图控制（两行布局，避免控件最小宽度把窗口横向撑大）
@@ -594,15 +597,39 @@ class VisualizationPanel(QWidget):
 
     # ==================== 绘图页签管理 ====================
 
+    def _on_plot_tab_moved(self, from_index, to_index):
+        """VZ-01: 拖动图页签后重建 _plot_tab_order 并刷新标题。"""
+        if not self._plot_tab_order:
+            return
+        new_order = [''] * len(self._plot_tab_order)
+        for i in range(self.plot_tabs.count()):
+            widget = self.plot_tabs.widget(i)
+            if widget is not None:
+                vid = getattr(widget, 'view_id', None)
+                if vid is not None and vid in self._plot_tab_order:
+                    new_order[i] = vid
+        for vid in self._plot_tab_order:
+            if vid not in new_order:
+                for j in range(len(new_order)):
+                    if not new_order[j]:
+                        new_order[j] = vid
+                        break
+        self._plot_tab_order = new_order
+        self._refresh_tab_titles()
+
+    def _refresh_tab_titles(self):
+        """按 _plot_tab_order 刷新页签标题（图1, 图2, …）。"""
+        for i, vid in enumerate(self._plot_tab_order):
+            if i < self.plot_tabs.count():
+                self.plot_tabs.setTabText(i, f'图{i + 1}')
 
     def _create_plot_view(self, name=None, set_active=True):
         if name is None:
             name = f'图{self._plot_view_counter + 1}'
-
         view_id = self._plot_view_counter
         self._plot_view_counter += 1
-
         tab = QWidget()
+        tab.view_id = view_id  # VZ-01: 供 _on_plot_tab_moved 重建顺序用
         tab_layout = QVBoxLayout(tab)
         canvas = MatplotlibCanvas(self)
         toolbar = NavigationToolbar(canvas, self)
@@ -611,8 +638,6 @@ class VisualizationPanel(QWidget):
         txt_stats.setReadOnly(True)
         txt_stats.setFont(QFont('Consolas', 9))
         txt_stats.setText('(无数据)')
-
-        # 绘图 / 表格 双视图（表格使用轻量模型，大数据量不卡顿）
         display_stack = QStackedWidget()
         display_stack.addWidget(canvas)
         table_model = SeriesTableModel(self)
@@ -621,11 +646,9 @@ class VisualizationPanel(QWidget):
         table_view.setEditTriggers(QAbstractItemView.NoEditTriggers)
         table_view.verticalHeader().setDefaultSectionSize(22)
         display_stack.addWidget(table_view)
-
         tab_layout.addWidget(toolbar)
         tab_layout.addWidget(display_stack, 1)
         tab_layout.addWidget(txt_stats)
-
         tab_index = self.plot_tabs.addTab(tab, name)
         self._plot_tab_order.append(view_id)
         self.plot_views[view_id] = PlotViewRecord(
@@ -639,7 +662,6 @@ class VisualizationPanel(QWidget):
             table_view=table_view,
             table_model=table_model,
         )
-
         if set_active:
             self.plot_tabs.setCurrentIndex(tab_index)
 
