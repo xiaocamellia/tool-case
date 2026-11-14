@@ -899,6 +899,9 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
         try:
             rec = self.projects[self.current_project_id]['tasks'][self.current_task_id]['records'][self.current_record_id]
         except KeyError:
+            # ER-02: 提示"当前记录已不存在"
+            if not quiet:
+                QMessageBox.warning(self, '保存失败', '当前记录已不存在，可能已被删除。')
             return False
 
         rec['title'] = self.edit_title.text()
@@ -970,6 +973,11 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
         elif data[0] == 'task':
             _, pid, tid = data
             del self.projects[pid]['tasks'][tid]
+            # ER-02: 删任务后清理 current_*
+            if self.current_task_id == tid:
+                self.current_task_id = None
+                self.current_record_id = None
+                self.stacked.setCurrentIndex(0)
         elif data[0] == 'project':
             pid = data[1]
             del self.projects[pid]
