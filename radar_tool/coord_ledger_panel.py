@@ -1181,7 +1181,13 @@ class CoordinateLedgerPanel(QWidget):
         elif kind == "transform":
             record = self.ledger.document.transform_map().get(payload["id"])
             if record:
-                self.attribute_text.setPlainText(fmt.transform_detail(record))
+                # CL-04: 用 record.to 查 frame 取 unit 传入
+                frame_map = self.ledger.document.frame_map()
+                to_frame = frame_map.get(record.to)
+                to_unit = getattr(to_frame, 'unit', 'm') if to_frame else 'm'
+                self.attribute_text.setPlainText(
+                    fmt.transform_detail(record, unit=to_unit)
+                )
         elif kind == "limit":
             for limit in self.ledger.limits():
                 if limit.id == payload["id"]:

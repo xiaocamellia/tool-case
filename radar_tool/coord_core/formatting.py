@@ -128,10 +128,14 @@ def fmt_translation(translation: Sequence, unit: str = "m") -> str:
     return fmt_vec3(values, unit="mm", precision=3)
 
 
-def fmt_sigma(sigma_t: float, sigma_r_arcsec: float) -> str:
-    """``平移 σ=0.400 mm，旋转 σ=1.80″``。"""
+def fmt_sigma(sigma_t: float, sigma_r_arcsec: float, unit: str = "m") -> str:
+    """``平移 σ=0.400 mm，旋转 σ=1.80″``。CL-29: 单位跟随 to 系。"""
+    # 内部统一存 m，按 unit 换算显示
+    unit_factors = {"m": 1.0, "mm": 1000.0, "cm": 100.0}
+    factor = unit_factors.get(unit, 1.0)
+    display_val = float(sigma_t) * factor
     return (
-        f"平移 σ={float(sigma_t) * 1000.0:.3f} mm，"
+        f"平移 σ={display_val:.3f} {unit}，"
         f"旋转 σ={float(sigma_r_arcsec):.2f}″"
     )
 
@@ -229,10 +233,13 @@ def ledger_detail(meta, frame_count: int, transform_count: int,
     return "\n".join(lines)
 
 
-def transform_detail(record, meta=None) -> str:
-    unit = "m"
-    if meta is not None:
-        unit = getattr(meta, "unit_default", "m")
+def transform_detail(record, meta=None, unit=None) -> str:
+    """CL-04: unit 参数控制显示单位（跟随 to 系）。"""
+    if unit is None:
+        if meta is not None:
+            unit = getattr(meta, "unit_default", "m")
+        else:
+            unit = "m"
     lines = [
         f"变换   {record.id}",
         f"关系   {record.matrix_label()}",
@@ -241,7 +248,7 @@ def transform_detail(record, meta=None) -> str:
         f"生效   {record.effective or '—'}",
         f"平移   {fmt_translation(record.translation, unit=unit)}",
         f"旋转   {fmt_rotation_spec(record.rotation)}",
-        f"误差   {fmt_sigma(record.sigma.t, record.sigma.r_arcsec)}",
+        f"误差   {fmt_sigma(record.sigma.t, record.sigma.r_arcsec, unit=unit)}",  # CL-29
         f"备注   {record.note or '—'}",
     ]
     return "\n".join(lines)
