@@ -565,12 +565,12 @@ class ArrayDesignerPanel(QWidget):
             aperture = aperture_x
             beamwidth_formula = f'50.8/(N*d) = {50.8 / max(N * d_lam, 1e-12):.2f}°'
             theoretical_beamwidth = 50.8 / max(N * d_lam, 1e-12)
+            from .calc_formulas import unambiguous_fov_deg  # AR-05+CC-08
             if d_lam > 1:
                 grating_formula = f'asin(1/d) = {math.degrees(math.asin(min(1 / d_lam, 1))):.1f}°'
-                unambig = math.degrees(math.asin(min(1 / (2 * d_lam), 1)))
             else:
                 grating_formula = 'd≤1λ，无栅瓣'
-                unambig = 90.0 if d_lam > 0.5 else 180.0
+            unambig = unambiguous_fov_deg(d_lam)  # AR-05+CC-08
         elif template_idx == 1:
             radius_lam = self.spin_radius.value()
             aperture_x = aperture_y = 2 * radius_lam
@@ -620,7 +620,8 @@ class ArrayDesignerPanel(QWidget):
             grating_formula = '自定义阵列按数值峰值判断'
             unambig = 180.0
 
-        array_gain = 10 * math.log10(max(N, 1)) + 3
+        from .calc_formulas import array_gain_db  # AR-05+CC-08
+        array_gain = array_gain_db(max(N, 1), element_gain_dbi=3.0)  # AR-05+CC-08
         return {
             'gain': array_gain,
             'beamwidth': beamwidth,

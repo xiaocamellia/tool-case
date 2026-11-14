@@ -3,6 +3,30 @@ import math
 
 from .calc_units import C
 
+
+def array_gain_db(element_count, element_gain_dbi=0.0):
+    """AR-05+CC-08: 阵列增益公共函数（dBi）。
+
+    公式: G = element_gain + 10*log10(N)
+    """
+    if element_count < 1:
+        raise ValueError('阵元数必须至少为 1')
+    return float(element_gain_dbi) + 10 * math.log10(int(element_count))
+
+
+def unambiguous_fov_deg(spacing_lam):
+    """AR-05+CC-08: 无模糊范围公共函数（度）。
+
+    公式: FOV = asin(1/(2*d/λ))，当 d/λ ≤ 0.5 时为 180°。
+    注意: d=1λ 时应为 30°（而非 90°）。
+    """
+    if spacing_lam <= 0:
+        raise ValueError('间距必须大于 0')
+    if spacing_lam <= 0.5:
+        return 180.0
+    return math.degrees(math.asin(min(1.0 / (2 * spacing_lam), 1.0)))
+
+
 def calculate_link_budget(
     pt_dbm,
     gt_dbi,
