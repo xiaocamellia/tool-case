@@ -596,6 +596,40 @@ class CoordinateLedgerPanel(QWidget):
         self.ledger = Ledger.sample()
         self._refresh_all()
         self._set_status("示例账本已加载")
+        self._show_sample_banner()  # CL-01
+
+    def _show_sample_banner(self):
+        """CL-01: 示例账本只读横幅 + 清空并开始按钮。"""
+        if self.__dict__.get('_sample_banner'):
+            return
+        try:
+            from PyQt5.QtWidgets import QLabel, QHBoxLayout, QPushButton
+            banner = QWidget()
+            banner.setStyleSheet('background: #fefce8; border-bottom: 2px solid #ca8a04;')
+            layout = QHBoxLayout(banner)
+            layout.setContentsMargins(8, 4, 8, 4)
+            msg = QLabel('⚠️ 当前为示例账本（只读），修改不会保存。')
+            msg.setStyleSheet('color: #a16207; font-weight: bold; font-size: 10pt;')
+            layout.addWidget(msg, 1)
+            btn_clear = QPushButton('清空并开始')
+            btn_clear.setStyleSheet('background: #ca8a04; color: white; padding: 4px 12px; border-radius: 4px;')
+            btn_clear.clicked.connect(self._clear_and_start)
+            layout.addWidget(btn_clear)
+            parent_layout = self.layout()
+            if parent_layout is not None:
+                parent_layout.insertWidget(0, banner)
+            self._sample_banner = banner
+        except Exception:
+            pass
+
+    def _clear_and_start(self):
+        """CL-01: 清空示例并开始新账本。"""
+        self.ledger = Ledger.blank()
+        self.ledger.read_only = False
+        if self.__dict__.get('_sample_banner'):
+            self._sample_banner.hide()
+        self._refresh_all()
+        self._set_status('已清空，可开始编辑新账本')
 
     def _open_ledger(self) -> None:
         from PyQt5.QtWidgets import QFileDialog
@@ -613,6 +647,9 @@ class CoordinateLedgerPanel(QWidget):
         from .coord_core import storage as coord_storage
 
         coord_storage.remember_last_ledger(filepath)
+        # CL-01: 打开真实账本后隐藏示例横幅
+        if self.__dict__.get('_sample_banner'):
+            self._sample_banner.hide()
         self._refresh_all()
         self._set_status(f"已加载 {os.path.basename(filepath)}")
 

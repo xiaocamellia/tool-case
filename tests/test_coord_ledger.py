@@ -454,7 +454,7 @@ def test_t13_batch_equals_loop():
 
 
 def test_storage_roundtrip(tmp_path):
-    led = Ledger.sample()
+    led = Ledger.blank()  # CL-01: 示例账本只读，改用 blank
     filepath = str(tmp_path / "ledger_test_v1.0.json")
     led.save(filepath)
     loaded = Ledger.load(filepath)
@@ -464,7 +464,7 @@ def test_storage_roundtrip(tmp_path):
 
 
 def test_storage_backup_on_save(tmp_path):
-    led = Ledger.sample()
+    led = Ledger.blank()  # CL-01: 示例账本只读，改用 blank
     filepath = str(tmp_path / "ledger_test_v1.0.json")
     led.save(filepath)
     led.save(filepath)
@@ -631,7 +631,7 @@ def test_d5_and_cli_roundtrip(tmp_path):
     from radar_tool.coord_ledger_cli import main
 
     ledger_path = str(tmp_path / "ledger.json")
-    Ledger.sample().save(ledger_path)
+    Ledger.blank().save(ledger_path)  # CL-01: 示例只读，改用 blank
     assert main(["check", "--ledger", ledger_path]) == 0
     assert main(["loop", "--ledger", ledger_path]) == 0
     assert main(["limits", "--ledger", ledger_path]) == 0

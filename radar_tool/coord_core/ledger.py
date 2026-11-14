@@ -119,11 +119,17 @@ class TransformPointResult:
 class Ledger:
     """坐标系账本：读写、求解、复核、导出的统一入口。"""
 
-    def __init__(self, document: LedgerDocument, path: str = ""):
+    def __init__(self, document: LedgerDocument, path: str = "", read_only: bool = False):
         self.document = document
         self.path = path
+        self.read_only = read_only  # CL-01: 只读标志
         self._graphs: Dict[Optional[str], TransformGraph] = {}
         self._validation: Optional[ValidationResult] = None
+
+    def _ensure_writable(self):
+        """CL-01: 只读账本拒绝写入。"""
+        if self.read_only:
+            raise ReadOnlyLedgerError('示例账本为只读，请先「清空并开始」或另存为新账本')
 
     # --- 装载 ---
 
@@ -137,7 +143,7 @@ class Ledger:
 
     @classmethod
     def sample(cls) -> "Ledger":
-        return cls(make_sample_document())
+        return cls(make_sample_document(), read_only=True)  # CL-01
 
     @classmethod
     def blank(cls, name: str = "新建坐标系账本") -> "Ledger":
@@ -148,6 +154,7 @@ class Ledger:
         return cls(merge_documents([ledger.document for ledger in ledgers], name=name))
 
     def save(self, filepath: Optional[str] = None) -> str:
+        self._ensure_writable()  # CL-01
         target = filepath or self.path
         if not target:
             raise ValidationError("未指定账本保存路径")
@@ -538,3 +545,7 @@ class Ledger:
 
     def export_review_markdown(self, **options) -> str:
         return report_module.build_review_report_markdown(self, **options)
+
+
+class ReadOnlyLedgerError(Exception):
+    """CL-01: 只读账本写入被拒绝。"""
