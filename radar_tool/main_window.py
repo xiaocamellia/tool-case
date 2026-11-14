@@ -165,7 +165,29 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
             return
         if self._tab_loaded[index]:
             return
-        panel = self._lazy_create_or_get_panel(index)
+        # G-07: 首次懒加载 — 等待光标 + 遮罩提示
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        # 在页签内容区临时显示遮罩（需先 repaint 才能绘制）
+        placeholder = self.feature_tabs.widget(index)
+        mask = QLabel(f'正在初始化「{self._tab_names[index]}」…')
+        mask.setAlignment(Qt.AlignCenter)
+        mask.setStyleSheet(
+            'color: #64748b; font-size: 12pt; background: #f5f7fb;'
+        )
+        if placeholder is not None:
+            placeholder_layout = placeholder.layout()
+            if placeholder_layout is None:
+                placeholder_layout = QVBoxLayout(placeholder)
+            placeholder_layout.addWidget(mask)
+        self.feature_tabs.repaint()
+        QApplication.processEvents()
+        try:
+            panel = self._lazy_create_or_get_panel(index)
+        finally:
+            QApplication.restoreOverrideCursor()
+            if placeholder is not None:
+                placeholder_layout.removeWidget(mask)
+                mask.deleteLater()
         if panel is None:
             self.feature_tabs.blockSignals(True)
             self.feature_tabs.setCurrentIndex(0)
