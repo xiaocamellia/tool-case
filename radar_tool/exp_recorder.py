@@ -1334,7 +1334,7 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
 
         if level == 'record' and data[0] == 'record':
             _, pid, tid, rid = data
-            self._load_record(pid, tid, rid)
+            # ER-04: 不调 _load_record，直接从 self.projects 取数据导出
             self._export_to_word('record', pid, tid, rid)
         elif level == 'task' and data[0] == 'task':
             _, pid, tid = data
