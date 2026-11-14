@@ -56,10 +56,12 @@ class TaskSnapshot:
     __slots__ = (
         "task_id", "name", "phase", "progress", "message",
         "cancel_requested", "completed", "outcome", "error", "version", "stale",
+        "started_at", "finished_at", "tab_name",
     )
 
     def __init__(self, task_id, name, phase, progress, message,
-                 cancel_requested, completed, outcome, error, version, stale):
+                 cancel_requested, completed, outcome, error, version, stale,
+                 started_at=0.0, finished_at=0.0, tab_name=""):
         self.task_id = task_id
         self.name = name
         self.phase = phase
@@ -71,6 +73,9 @@ class TaskSnapshot:
         self.error = error
         self.version = version
         self.stale = stale
+        self.started_at = started_at
+        self.finished_at = finished_at
+        self.tab_name = tab_name
 
 
 class TaskRegistry(QObject):
@@ -90,7 +95,8 @@ class TaskRegistry(QObject):
         self._records: Dict[str, dict] = {}
 
     def register(self, name, owner, thread, worker,
-                 cancel_callback: Optional[Callable[[], object]] = None) -> str:
+                 cancel_callback: Optional[Callable[[], object]] = None,
+                 tab_name: str = "") -> str:
         """登记已经组装完成但尚未启动的 Worker/QThread。"""
         normalized_name = str(name).strip() or "后台任务"
         self.ensure_can_start(owner, normalized_name)
@@ -115,6 +121,7 @@ class TaskRegistry(QObject):
             "progress": 0, "message": "", "cancel_requested": False,
             "completed": False, "outcome": "", "error": "",
             "started_at": 0.0, "finished_at": 0.0,
+            "tab_name": str(tab_name) if tab_name else "",
         }
         self._records[task_id] = record
         thread.finished.connect(
@@ -186,6 +193,8 @@ class TaskRegistry(QObject):
             record["message"], record["cancel_requested"], record["completed"],
             record["outcome"], record["error"], record["version"],
             record["stale"],
+            record.get("started_at", 0.0), record.get("finished_at", 0.0),
+            record.get("tab_name", ""),
         )
 
     def _on_thread_finished(self, task_id):
@@ -211,6 +220,16 @@ class TaskRegistry(QObject):
             self._snapshot(record) for record in self._records.values()
             if self._matches(record, owner)
         ]
+
+    def clear_completed(self, owner=None) -> int:
+        """仅移除已完成的快照记录，不动进行中的。返回移除条数。"""
+        to_remove = [
+            task_id for task_id, record in self._records.items()
+            if self._matches(record, owner) and record["completed"]
+        ]
+        for task_id in to_remove:
+            del self._records[task_id]
+        return len(to_remove)
 
     def active_snapshots(self, owner=None) -> List[TaskSnapshot]:
         result = []
@@ -363,12 +382,12 @@ def task_registry_for(owner) -> TaskRegistry:
 
 
 def register_background_task(owner, name, thread, worker,
-                             cancel_callback=None) -> int:
+                             cancel_callback=None, tab_name="") -> int:
     """把任务登记到所属顶层窗口，不再扫描 `_thread` 属性。"""
     window = owner.window() if hasattr(owner, "window") else owner
     registry = task_registry_for(owner)
     task_id = registry.register(
-        name, window, thread, worker, cancel_callback
+        name, window, thread, worker, cancel_callback, tab_name=tab_name
     )
     return next(
         snapshot.version for snapshot in registry.snapshots(window)
