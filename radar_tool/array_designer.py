@@ -176,7 +176,7 @@ class ArrayDesignerPanel(QWidget):
         ctrl_layout.addWidget(self.edit_freq_custom)
 
         self.combo_weight = QComboBox()
-        self.combo_weight.addItems(['均匀加权', '余弦加权', '汉明加权', '切比雪夫(-30dB)', '切比雪夫(-40dB)'])
+        self.combo_weight.addItems(['均匀加权', '余弦加权', '汉明加权', '切比雪夫近似（副瓣约束暂未实现）'])
         self.combo_weight.currentIndexChanged.connect(self._on_param_change)
         ctrl_layout.addWidget(QLabel('加权:'))
         ctrl_layout.addWidget(self.combo_weight, 1)
@@ -408,18 +408,17 @@ class ArrayDesignerPanel(QWidget):
             amps = 0.54 - 0.46 * np.cos(
                 2 * math.pi * np.arange(N) / max(N - 1, 1))
         elif w_idx == 3:
-            amps = self._chebyshev(N, 30)
-        elif w_idx == 4:
-            amps = self._chebyshev(N, 40)
+            amps = self._chebyshev(N, 30)  # AR-04: 合并为一项，副瓣约束暂未实现
         else:
             amps = np.ones(N)
         scale = float(np.max(np.abs(amps)))
         return amps / scale if scale > 0 else np.zeros(N)
 
     def _chebyshev(self, N, sidelobe_db):
-        """切比雪夫加权近似"""
+        """切比雪夫加权近似（AR-04: 副瓣约束暂未实现，当前为均匀/余弦近似）"""
         if N < 2:
             return np.ones(max(N, 0))
+        # beta=0.5 为固定值，真正的 Dolph-Chebyshev 需要反解 beta 并配置零点
         beta = 0.5
         x0 = np.cosh(1.0 / N * np.arccosh(10 ** (sidelobe_db / 20)))
         amps = []
