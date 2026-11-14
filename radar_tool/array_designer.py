@@ -416,16 +416,21 @@ class ArrayDesignerPanel(QWidget):
             for i in range(1, Ny):
                 y = i * d_lam * lam
                 self.elements.append({'x': 0.0, 'y': y, 'amp': 1.0, 'phase': 0.0})
-        elif idx == 4:  # 十字阵
-            Nh = N // 2
-            Nv = N - Nh
-            self.elements = []
-            for i in range(Nh):
-                x = (i - (Nh-1)/2) * d_lam * lam
-                self.elements.append({'x': x, 'y': 0.0, 'amp': 1.0, 'phase': 0.0})
-            for i in range(1, Nv):
-                y = i * d_lam * lam
-                self.elements.append({'x': 0.0, 'y': y, 'amp': 1.0, 'phase': 0.0})
+        elif idx == 4:  # 十字阵 (AR-03: 中心+四臂对称，使实际数=N)
+            self.elements = [{'x': 0.0, 'y': 0.0, 'amp': 1.0, 'phase': 0.0}]  # 中心
+            n_arms = (N - 1) // 4  # 每臂元素数
+            remaining = (N - 1) - n_arms * 4  # 余数分给前几臂
+            arm_sizes = [n_arms] * 4
+            for i in range(remaining):
+                arm_sizes[i] += 1
+            # 四臂: +x, -x, +y, -y
+            for arm_idx, (dx, dy) in enumerate([(1, 0), (-1, 0), (0, 1), (0, -1)]):
+                for j in range(1, arm_sizes[arm_idx] + 1):
+                    self.elements.append({
+                        'x': dx * j * d_lam * lam,
+                        'y': dy * j * d_lam * lam,
+                        'amp': 1.0, 'phase': 0.0,
+                    })
         else:  # 自定义
             pass
 
