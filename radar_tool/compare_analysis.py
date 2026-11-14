@@ -78,7 +78,7 @@ class CompareAnalysisMixin(CompareDataMixin, CompareWorkerMixin, ComparePlotMixi
         left_scroll = QScrollArea()
         left_scroll.setWidgetResizable(True)
         left_scroll.setFrameShape(QScrollArea.NoFrame)
-        left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)  # TR-04: 允许横向滚动
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
@@ -89,7 +89,7 @@ class CompareAnalysisMixin(CompareDataMixin, CompareWorkerMixin, ComparePlotMixi
         left_layout.addWidget(self._create_compare_alignment_group())
         left_layout.addStretch(1)
         left_scroll.setWidget(left)
-        left_scroll.setMinimumWidth(680)
+        left_scroll.setMinimumWidth(520)  # TR-04: 680→520
         self.compare_left_scroll = left_scroll
         self.compare_left_panel = left
 
@@ -112,6 +112,11 @@ class CompareAnalysisMixin(CompareDataMixin, CompareWorkerMixin, ComparePlotMixi
         splitter = getattr(self, 'compare_splitter', None)
         if splitter is None:
             return
+        # TR-04: 右区最小宽 420 约束
+        if splitter.count() >= 2:
+            right_widget = splitter.widget(1)
+            if right_widget is not None:
+                right_widget.setMinimumWidth(420)
         available = splitter.width()
         if available <= 100:
             splitter.setSizes([720, 680])
