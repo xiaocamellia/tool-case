@@ -1066,6 +1066,22 @@ class VisualizationPanel(QWidget):
         self.datasets.pop(dataset_id, None)
         logger.info(f'用户操作: 移除数据集 — "{label}" (id={dataset_id})')
 
+        # VZ-03: 删除后遍历所有 plot view，剔除该 dataset 的曲线并重绘
+        for view in self.plot_views.values():
+            # 重建所有曲线（过滤掉已删数据集的项）
+            view.canvas.axes.clear()
+            for item in self.plot_items:
+                if item.chart_id == view.view_id:
+                    view.canvas.axes.plot(
+                        item.x_data, item.y_data,
+                        label=item.label, color=item.color,
+                    )
+            if any(item.chart_id == view.view_id for item in self.plot_items):
+                view.canvas.axes.legend()
+            else:
+                view.txt_stats.setText('(无数据)')
+            view.canvas.draw_idle()
+
         if self.datasets:
             next_id = sorted(self.datasets.keys())[0]
             self.set_active_dataset(next_id)
