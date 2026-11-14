@@ -63,6 +63,7 @@ try:
 except ModuleNotFoundError:
     pass
 
+from .ui_theme import set_text_tone, set_prop, set_variant  # V2 语义样式工具
 from .ui_theme import (
     set_button_icon, style_primary_button, style_warning_button, style_calc_button
 )
@@ -223,7 +224,7 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
         # ===== 顶部工具栏 =====
         top_layout = QHBoxLayout()
         lbl_title = QLabel('📋 试验记录助手')
-        lbl_title.setStyleSheet('font-size: 18px; font-weight: bold; color: #1e293b;')
+        lbl_title.setObjectName('pageTitle')
         top_layout.addWidget(lbl_title)
 
         self.btn_new_project = QPushButton('📁 新建项目')
@@ -242,7 +243,7 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
 
         top_layout.addStretch()
         self.lbl_save_status = QLabel('')
-        self.lbl_save_status.setStyleSheet('font-size: 10px; color: #94a3b8;')
+        set_text_tone(self.lbl_save_status, 'hint')
         top_layout.addWidget(self.lbl_save_status)
         self.btn_save = QPushButton('💾 保存')
         self.btn_save.clicked.connect(self._save_current_record)
@@ -320,12 +321,12 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
 
         # 标题区
         title_lbl = QLabel('📋 试验记录助手')
-        title_lbl.setStyleSheet('font-size: 24px; font-weight: bold; color: #1e293b;')
+        title_lbl.setObjectName('pageTitle')
         title_lbl.setAlignment(Qt.AlignCenter)
         empty_layout.addWidget(title_lbl)
 
         sub_lbl = QLabel('告别Word排版 · 一键生成规范试验报告')
-        sub_lbl.setStyleSheet('font-size: 13px; color: #64748b; margin-bottom: 20px;')
+        sub_lbl.setObjectName('pageSubtitle')
         sub_lbl.setAlignment(Qt.AlignCenter)
         empty_layout.addWidget(sub_lbl)
 
@@ -348,26 +349,15 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
         for i, (icon_title, desc) in enumerate(features):
             row, col = i // 2, i % 2
             card = QFrame()
-            card.setStyleSheet("""
-                QFrame {
-                    background: #ffffff;
-                    border: 1px solid #e2e8f0;
-                    border-radius: 10px;
-                    padding: 14px;
-                }
-                QFrame:hover {
-                    border-color: #94a3b8;
-                    background: #f8fafc;
-                }
-            """)
+            card.setObjectName('featureCard')
             card_layout = QVBoxLayout(card)
             card_layout.setContentsMargins(12, 10, 12, 10)
             card_layout.setSpacing(4)
             icon_lbl = QLabel(icon_title)
-            icon_lbl.setStyleSheet('font-size: 14px; font-weight: bold; color: #1e293b;')
+            set_text_tone(icon_lbl, '')
             card_layout.addWidget(icon_lbl)
             desc_lbl = QLabel(desc)
-            desc_lbl.setStyleSheet('font-size: 11px; color: #64748b;')
+            set_text_tone(desc_lbl, 'muted')
             desc_lbl.setWordWrap(True)
             card_layout.addWidget(desc_lbl)
             grid.addWidget(card, row, col)
@@ -377,7 +367,7 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
         # 底部操作提示
         empty_layout.addSpacing(20)
         tip_lbl = QLabel('💡 点击左侧「📁 项目结构」→ 右键或顶部按钮新建项目/任务/记录')
-        tip_lbl.setStyleSheet('font-size: 12px; color: #94a3b8; padding: 8px; background: #f1f5f9; border-radius: 6px;')
+        tip_lbl.setObjectName('tipBar')
         tip_lbl.setAlignment(Qt.AlignCenter)
         empty_layout.addWidget(tip_lbl)
 
@@ -408,7 +398,7 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
         # 标题
         self.edit_title = QLineEdit()
         self.edit_title.setPlaceholderText('请输入试验记录标题')
-        self.edit_title.setStyleSheet('font-size: 16px; font-weight: bold; padding: 6px;')
+        self.edit_title.setObjectName('pageTitle')
         self.edit_layout.addWidget(self.edit_title)
         self.edit_title.textChanged.connect(self._mark_record_dirty)
 
@@ -486,13 +476,13 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
         step_id = len(self.step_widgets)
         frame = QFrame()
         frame.setFrameShape(QFrame.StyledPanel)
-        frame.setStyleSheet('QFrame { border: 1px solid #e2e8f0; border-radius: 4px; padding: 4px; margin: 2px; }')
+        frame.setObjectName('stepCard')
         step_layout = QVBoxLayout(frame)
 
         # 步骤标题行
         top_row = QHBoxLayout()
         lbl = QLabel(f'步骤 {step_id + 1}:')
-        lbl.setStyleSheet('font-weight: bold;')
+        set_text_tone(lbl, '')
         top_row.addWidget(lbl)
 
         title_edit = QLineEdit()
@@ -501,7 +491,7 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
 
         btn_del = QPushButton('\u2715')
         btn_del.setFixedSize(24, 24)
-        btn_del.setStyleSheet('background: #fee2e2; color: #ef4444; border: none; border-radius: 4px;')
+        btn_del.setObjectName('dangerIconButton')
         btn_del.clicked.connect(lambda: self._remove_step(frame))
         top_row.addWidget(btn_del)
 
@@ -924,11 +914,11 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
         if not ok:
             # ER-01: 保存失败不写 ✅
             self.lbl_save_status.setText(f'⚠️ 保存失败：{error}')
-            self.lbl_save_status.setStyleSheet('color: #dc2626; font-weight: bold;')
+            set_text_tone(self.lbl_save_status, 'danger')
             if not quiet:
                 QMessageBox.warning(self, '保存失败', f'保存失败：{error}\n请检查数据目录权限后重试。')
             return False
-        self.lbl_save_status.setStyleSheet('')
+        set_text_tone(self.lbl_save_status, '')
         saved_note = '✅ 已保存 ' + datetime.datetime.now().strftime('%H:%M')
         if dropped_images:
             saved_note += f'（⚠️ {dropped_images} 张截图入库失败）'
@@ -1128,7 +1118,7 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
         'field_space_before': Pt(2),
         'field_space_after': Pt(2),
 
-        # ── 图片题注（小五居中 #666666） ──
+        # ── 图片题注（小五居中、灰色） ──
         'fig_caption_font': '宋体',
         'fig_caption_size': Pt(9),          # 小五
         'fig_caption_color': RGBColor(0x66, 0x66, 0x66),
@@ -1431,12 +1421,12 @@ class ExpRecorderPanel(WordExportMixin, QWidget):
             from PyQt5.QtGui import QDesktopServices
             from .logger import LOG_DIR
             banner = QWidget()
-            banner.setStyleSheet('background: #fef2f2; border-bottom: 2px solid #dc2626;')
+            banner.setObjectName('errorBanner')
             layout = QHBoxLayout(banner)
             layout.setContentsMargins(8, 4, 8, 4)
             backup_name = os.path.basename(quarantined_path) if quarantined_path else '(未能隔离)'
             msg = QLabel(f'⚠️ 试验数据加载失败，原文件已备份为 `{backup_name}`，当前列表为空。')
-            msg.setStyleSheet('color: #dc2626; font-weight: bold; font-size: 10pt;')
+            set_text_tone(msg, 'danger')
             layout.addWidget(msg, 1)
             btn_dir = QPushButton('打开数据目录')
             btn_dir.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(LOG_DIR)))

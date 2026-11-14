@@ -28,6 +28,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
+from .ui_theme import set_text_tone, set_prop, set_variant  # V2 语义样式工具
 from .format_conversion import (
     FormatConversionCancelled,
     FormatConversionError,
@@ -139,9 +140,9 @@ class FormatConversionPanel(QWidget):
         heading = QHBoxLayout()
         title_box = QVBoxLayout()
         title = QLabel('格式转换')
-        title.setStyleSheet('font-size: 18px; font-weight: bold; color: #172033;')
+        title.setObjectName('pageTitle')
         subtitle = QLabel('TR 幅相参数协议转换与回读校验')
-        subtitle.setStyleSheet('color: #64748b;')
+        set_text_tone(subtitle, 'muted')
         title_box.addWidget(title)
         title_box.addWidget(subtitle)
         heading.addLayout(title_box)
@@ -236,7 +237,7 @@ class FormatConversionPanel(QWidget):
         )
         for row, (name, value) in enumerate(entries):
             name_label = QLabel(name)
-            name_label.setStyleSheet('color: #64748b;')
+            set_text_tone(name_label, 'muted')
             value_label = QLabel(value)
             value_label.setWordWrap(True)
             protocol_layout.addWidget(name_label, row, 0, Qt.AlignTop)
@@ -262,10 +263,7 @@ class FormatConversionPanel(QWidget):
             label = QLabel(f'{caption}\n--')
             label.setAlignment(Qt.AlignCenter)
             label.setMinimumHeight(54)
-            label.setStyleSheet(
-                'QLabel { background: #f8fafc; border: 1px solid #d7dee9; '
-                'border-radius: 6px; padding: 5px; color: #334155; }'
-            )
+            label.setObjectName('summaryTile')
             summary_row.addWidget(label, 1)
             self.summary_labels.append(label)
         layout.addLayout(summary_row)
@@ -298,18 +296,9 @@ class FormatConversionPanel(QWidget):
         return container
 
     def _set_status(self, text, state):
-        colors = {
-            'idle': ('#f1f5f9', '#475569', '#cbd5e1'),
-            'running': ('#eff6ff', '#1d4ed8', '#bfdbfe'),
-            'success': ('#ecfdf5', '#166534', '#86efac'),
-            'error': ('#fef2f2', '#b91c1c', '#fca5a5'),
-        }
-        background, foreground, border = colors[state]
         self.status_badge.setText(text)
-        self.status_badge.setStyleSheet(
-            f'background: {background}; color: {foreground}; border: 1px solid {border}; '
-            'border-radius: 6px; padding: 6px 10px; font-weight: 600;'
-        )
+        self.status_badge.setObjectName('statusBadge')
+        set_prop(self.status_badge, 'tone', state)
 
     def _update_direction(self):
         self.source_edit.clear()

@@ -37,6 +37,8 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
+from .ui_theme import TOKENS  # V2 语义令牌
+from .ui_theme import set_text_tone, set_prop, set_variant  # V2 语义样式工具
 from .coord_core import Ledger
 from .coord_core import formatting as fmt
 from .coord_core.compare import VERDICT_LABELS
@@ -49,14 +51,14 @@ from .ui_theme import style_primary_button, style_warning_button
 logger = get_logger("coord_ledger_panel")
 
 VERDICT_COLORS = {
-    "ok": QColor("#e8f5e9"),
-    "warn": QColor("#fff8e1"),
-    "fail": QColor("#ffebee"),
+    "ok": QColor(TOKENS['successBg']),
+    "warn": QColor(TOKENS['warningBg']),
+    "fail": QColor(TOKENS['dangerBg']),
 }
 _VERDICT_TEXT_COLORS = {
-    "ok": QColor("#1b5e20"),
-    "warn": QColor("#e65100"),
-    "fail": QColor("#b71c1c"),
+    "ok": QColor(TOKENS['successText']),
+    "warn": QColor(TOKENS['warningText']),
+    "fail": QColor(TOKENS['dangerText']),
 }
 
 
@@ -157,7 +159,7 @@ class _RecordDialog(QDialog):
         form.addRow("结果系（from，变换后所在系）", self.from_combo)
         self._relation_hint = QLabel()
         self._relation_hint.setWordWrap(True)
-        self._relation_hint.setStyleSheet("color: #64748b; font-size: 9pt;")
+        set_text_tone(self._relation_hint, 'muted')
         self.from_combo.currentIndexChanged.connect(self._update_relation_hint)
         self.to_combo.currentIndexChanged.connect(self._update_relation_hint)
         self._update_relation_hint()
@@ -284,7 +286,7 @@ class _FrameDialog(QDialog):
             "选择父系后将自动生成安装变换 T_<父系>_<新系>_design（RPY 为 ZYX 内旋）"
         )
         self._parent_hint.setWordWrap(True)
-        self._parent_hint.setStyleSheet("color: #64748b; font-size: 9pt;")
+        set_text_tone(self._parent_hint, 'muted')
         form.addRow(self._parent_hint)
         self.parent_combo.currentIndexChanged.connect(self._on_parent_changed)
         self._on_parent_changed()
@@ -400,11 +402,7 @@ class CoordinateLedgerPanel(QWidget):
         style_warning_button(self.btn_delete)
         for button in (self.btn_open, self.btn_new, self.btn_template,
                        self.btn_save_as, self.btn_add_frame, self.btn_add_transform):
-            button.setStyleSheet(
-                "QPushButton { padding: 4px 10px; border: 1px solid #b6c2cf; "
-                "border-radius: 4px; background: #f4f7fa; }"
-                "QPushButton:hover { background: #e6eef6; }"
-            )
+            set_variant(button, 'secondary')
         for button in (self.btn_open, self.btn_new, self.btn_template,
                        self.btn_save, self.btn_save_as,
                        self.btn_add_frame, self.btn_add_transform,
@@ -450,11 +448,7 @@ class CoordinateLedgerPanel(QWidget):
         self.three_d_hint = QLabel("3D 视口（首次打开时加载 PyVista，失败则降级 matplotlib）")
         self.three_d_hint.setWordWrap(True)
         self.btn_refresh_3d = QPushButton("刷新 3D")
-        self.btn_refresh_3d.setStyleSheet(
-            "QPushButton { padding: 4px 12px; border: 1px solid #b6c2cf; "
-            "border-radius: 4px; background: #f4f7fa; }"
-            "QPushButton:hover { background: #e6eef6; }"
-        )
+        set_variant(self.btn_refresh_3d, 'secondary')
         self.btn_refresh_3d.clicked.connect(self._refresh_3d)
         three_d_top.addWidget(self.three_d_hint, 1)
         three_d_top.addWidget(self.btn_refresh_3d, 0, Qt.AlignTop)
@@ -653,14 +647,14 @@ class CoordinateLedgerPanel(QWidget):
         try:
             from PyQt5.QtWidgets import QLabel, QHBoxLayout, QPushButton
             banner = QWidget()
-            banner.setStyleSheet('background: #fefce8; border-bottom: 2px solid #ca8a04;')
+            banner.setObjectName('warningBanner')
             layout = QHBoxLayout(banner)
             layout.setContentsMargins(8, 4, 8, 4)
             msg = QLabel('⚠️ 当前为示例账本（只读），修改不会保存。')
-            msg.setStyleSheet('color: #a16207; font-weight: bold; font-size: 10pt;')
+            set_text_tone(msg, 'warning')
             layout.addWidget(msg, 1)
             btn_clear = QPushButton('清空并开始')
-            btn_clear.setStyleSheet('background: #ca8a04; color: white; padding: 4px 12px; border-radius: 4px;')
+            set_variant(btn_clear, 'warning')
             btn_clear.clicked.connect(self._clear_and_start)
             layout.addWidget(btn_clear)
             parent_layout = self.layout()
@@ -1181,9 +1175,10 @@ class CoordinateLedgerPanel(QWidget):
         elif kind == "transform":
             record = self.ledger.document.transform_map().get(payload["id"])
             if record:
-                # CL-04: 用 record.to 查 frame 取 unit 传入
+                # CL-04: 按变换的目标坐标系取单位（TransformRecord 的字段名是 to_frame，
+                # 不是 to；data 文件里才用 "to" 作为 JSON 键）
                 frame_map = self.ledger.document.frame_map()
-                to_frame = frame_map.get(record.to)
+                to_frame = frame_map.get(record.to_frame)
                 to_unit = getattr(to_frame, 'unit', 'm') if to_frame else 'm'
                 self.attribute_text.setPlainText(
                     fmt.transform_detail(record, unit=to_unit)

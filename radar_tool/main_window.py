@@ -7,7 +7,7 @@
 import os
 
 from PyQt5.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFrame,
     QLabel, QTabWidget, QMessageBox, QApplication, QProgressBar,
 )
 from PyQt5.QtCore import Qt
@@ -15,7 +15,7 @@ from PyQt5.QtCore import Qt
 from . import __version__
 from .background_tasks import TaskRegistry
 from .compare_analysis import CompareAnalysisMixin
-from .ui_theme import MAIN_STYLESHEET, STATUSBAR_STYLE
+from .ui_theme import MAIN_STYLESHEET, apply_global_theme, repolish, set_variant
 from .logger import get_logger
 
 logger = get_logger('main_window')
@@ -23,6 +23,16 @@ logger = get_logger('main_window')
 
 class MainWindow(QMainWindow, CompareAnalysisMixin):
     """便携化工具箱主窗口"""
+
+    #: 窄屏页签短名（V2 §4.1 宽度预算）。全称仍在 ``_tab_names`` 中，
+    #: 通过 tooltip 与各页 PageHeader 承载，短名只作用在页签栏。
+    #: 实测：全称 9 项在 Microsoft YaHei 10pt 下需 1471px，1024 窗口必然
+    #: 出现滚动箭头；短名 + 9pt + 8px 内边距为 942px，可完整显示。
+    _TAB_NAMES_COMPACT = [
+        '数据可视化', '真值复核', '测向仿真', '校正自动化', '阵列设计',
+        '指标计算', '格式转换', '试验记录', '坐标账本', '摸鱼游戏',
+    ]
+    _COMPACT_WIDTH_THRESHOLD = 1280
 
     def __init__(self):
         super().__init__()
@@ -75,8 +85,11 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
         central = QWidget()
         self.setCentralWidget(central)
         main_layout = QVBoxLayout(central)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
 
         self.feature_tabs = QTabWidget()
+        self.feature_tabs.setDocumentMode(True)
         # GM-01: 摸鱼栏按设置项决定是否注册（A-2，默认隐藏）
         from .settings_store import settings
         show_game = settings.get_bool('ui/show_game_tab', False)
@@ -96,15 +109,15 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
             '数据真值复核',
             '干涉仪测向仿真',
             '测向校正自动化',
-            '📡 阵列设计助手',
-            '🧮 指标计算器',
+            '阵列设计助手',
+            '指标计算器',
             '格式转换',
-            '📋 试验记录助手',
-            '📐 坐标系账本',
+            '试验记录助手',
+            '坐标系账本',
         ]
         if show_game:
             self._tab_factories.append(self._create_game_tab)
-            self._tab_names.append('🎮 摸鱼游戏')
+            self._tab_names.append('摸鱼游戏')
         self._tab_panels = [None] * len(self._tab_names)
         self._tab_loaded = [False] * len(self._tab_names)
         self._tab_failed = [False] * len(self._tab_names)  # G-02 第三态
@@ -115,20 +128,25 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
         for i in range(1, len(self._tab_names)):
             self.feature_tabs.addTab(QWidget(), self._tab_names[i])
 
+        # 页签栏响应式：窄窗口用短名，保证 1024 宽下 9 个页签完整可见
+        self._compact_tabs = None
+        self._update_tab_mode(force=True)
+
         self.feature_tabs.currentChanged.connect(self._on_tab_changed)
         main_layout.addWidget(self.feature_tabs, 1)
         logger.info('UI 初始化完成: 可视化(已加载) + %d个面板(延迟加载)',
                     max(len(self._tab_names) - 1, 0))
 
         self.status_label = QLabel('就绪')
+        self.status_label.setObjectName('statusText')
         self.statusBar().addWidget(self.status_label)
+        self.statusBar().setSizeGripEnabled(False)
 
         # G-06: 状态栏右侧常驻进度条 + 任务入口
         self._task_count_label = QLabel('')
-        self._task_count_label.setStyleSheet(
-            'color: #2563eb; font-size: 9pt; padding: 0 6px; cursor: pointer;'
-        )
+        self._task_count_label.setObjectName('statusTask')
         self._task_count_label.mousePressEvent = self._open_task_center
+        self._task_count_label.setCursor(Qt.PointingHandCursor)
         self._task_count_label.setVisible(False)
         self.statusBar().addPermanentWidget(self._task_count_label)
 
@@ -139,11 +157,41 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
         self.statusBar().addPermanentWidget(self._progress_bar)
 
         self.version_label = QLabel(f'v{__version__}')
-        self.version_label.setObjectName('version_label')
-        self.version_label.setStyleSheet(
-            'color: #64748b; font-size: 9pt; padding-right: 12px;'
-        )
+        self.version_label.setObjectName('statusVersion')
         self.statusBar().addPermanentWidget(self.version_label)
+
+    # ---- 页签栏响应式（V2 §4.1 宽度预算）----
+    def _tab_label(self, index):
+        """当前模式下第 index 个页签的显示文本（窄屏短名 / 宽屏全称）。"""
+        if not getattr(self, '_compact_tabs', False):
+            return self._tab_names[index]
+        if index < len(self._TAB_NAMES_COMPACT):
+            return self._TAB_NAMES_COMPACT[index]
+        return self._tab_names[index]
+
+    def _apply_tab_labels(self):
+        """写入页签文本与全称 tooltip，并让 QTabBar 重新抛光以应用紧凑 QSS。"""
+        tabs = self.feature_tabs
+        bar = tabs.tabBar()
+        bar.setProperty('compact', 'true' if self._compact_tabs else 'false')
+        repolish(bar)
+        for i in range(tabs.count()):
+            tabs.setTabText(i, self._tab_label(i))
+            tabs.setTabToolTip(i, self._tab_names[i])
+
+    def _update_tab_mode(self, force=False):
+        """窗口宽度 < 1280 时切到短页签名，保证 1024 宽下不出滚动箭头。"""
+        if not hasattr(self, 'feature_tabs'):
+            return
+        compact = self.width() < self._COMPACT_WIDTH_THRESHOLD
+        if not force and compact == self._compact_tabs:
+            return
+        self._compact_tabs = compact
+        self._apply_tab_labels()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_tab_mode()
 
     def _lazy_create_or_get_panel(self, index):
         if self._tab_loaded[index]:
@@ -166,48 +214,61 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
         return panel
 
     def _build_error_page(self, index, exc):
-        """G-02: 内联错误页 — 摘要 + 重试 + 查看日志，不弹模态。"""
-        from PyQt5.QtWidgets import QPushButton, QTextEdit
+        """G-02: 内联错误页 — 摘要 + 重试 + 查看日志，不弹模态（V2 §4.13 整页错误）。"""
+        from PyQt5.QtWidgets import QPushButton, QPlainTextEdit
         from PyQt5.QtCore import QUrl
         from PyQt5.QtGui import QDesktopServices
         from .logger import LOG_DIR
 
         page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setAlignment(Qt.AlignCenter)
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(24, 24, 24, 24)
+        outer.addStretch(1)
 
-        title = QLabel(f'⚠ 「{self._tab_names[index]}」页面加载失败')
-        title.setStyleSheet('color: #dc2626; font-size: 14pt; font-weight: bold;')
-        title.setAlignment(Qt.AlignCenter)
+        card = QFrame()
+        card.setObjectName('card')
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(8)
+
+        title = QLabel(f'「{self._tab_names[index]}」页面加载失败')
+        title.setObjectName('errorPageTitle')
         layout.addWidget(title)
 
-        detail = QTextEdit()
+        reason = QLabel('面板初始化时发生异常，其余页签不受影响；可重试或查看日志。')
+        reason.setObjectName('textMuted')
+        reason.setWordWrap(True)
+        layout.addWidget(reason)
+
+        detail = QPlainTextEdit()
         detail.setReadOnly(True)
         detail.setPlainText(str(exc))
         detail.setMaximumHeight(100)
-        detail.setStyleSheet('color: #64748b; font-size: 10pt; border: 1px solid #e2e8f0;')
         layout.addWidget(detail)
 
         btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
         btn_retry = QPushButton('重试')
-        btn_retry.setStyleSheet(
-            'QPushButton { background: #2563eb; color: white; padding: 8px 24px; '
-            'border-radius: 6px; font-size: 11pt; }'
-            'QPushButton:hover { background: #1d4ed8; }'
-        )
+        set_variant(btn_retry, 'primary')
         btn_retry.clicked.connect(lambda: self._retry_tab(index))
         btn_row.addWidget(btn_retry)
 
         btn_log = QPushButton('查看日志')
-        btn_log.setStyleSheet(
-            'QPushButton { background: #f5f7fb; color: #334155; padding: 8px 24px; '
-            'border: 1px solid #d7dee9; border-radius: 6px; font-size: 11pt; }'
-        )
+        set_variant(btn_log, 'secondary')
         btn_log.clicked.connect(lambda: QDesktopServices.openUrl(
             QUrl.fromLocalFile(LOG_DIR)
         ))
         btn_row.addWidget(btn_log)
+        btn_row.addStretch(1)
         layout.addLayout(btn_row)
+
+        row = QHBoxLayout()
+        row.addStretch(1)
+        card.setMaximumWidth(620)
+        row.addWidget(card)
+        row.addStretch(1)
+        outer.addLayout(row)
+        outer.addStretch(1)
         return page
 
     def _retry_tab(self, index):
@@ -231,9 +292,7 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
         placeholder = self.feature_tabs.widget(index)
         mask = QLabel(f'正在初始化「{self._tab_names[index]}」…')
         mask.setAlignment(Qt.AlignCenter)
-        mask.setStyleSheet(
-            'color: #64748b; font-size: 12pt; background: #f5f7fb;'
-        )
+        mask.setObjectName('emptyTitle')
         if placeholder is not None:
             placeholder_layout = placeholder.layout()
             if placeholder_layout is None:
@@ -255,9 +314,11 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
             return
         self.feature_tabs.blockSignals(True)
         self.feature_tabs.removeTab(index)
-        self.feature_tabs.insertTab(index, panel, self._tab_names[index])
+        self.feature_tabs.insertTab(index, panel, self._tab_label(index))
         self.feature_tabs.setCurrentIndex(index)
         self.feature_tabs.blockSignals(False)
+        # 懒加载重建了该 tab，短名与 tooltip 需重新写入
+        self._apply_tab_labels()
 
     def _create_viz_tab(self):
         from .visualization_panel import VisualizationPanel
@@ -299,9 +360,9 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
         return GamePanel(self)
 
     def _apply_theme(self):
-        self.setStyleSheet(MAIN_STYLESHEET)
-        self.statusBar().setStyleSheet(STATUSBAR_STYLE)
-        logger.debug('主题样式已应用')
+        # 全局 QSS 挂在 QApplication 上：TaskCenterDialog 等独立窗口也能拿到样式
+        apply_global_theme(QApplication.instance())
+        logger.debug('主题样式已应用（QApplication 级）')
 
     def _on_background_task_event(self, snapshot):
         if hasattr(self, 'status_label'):

@@ -538,7 +538,7 @@ class LedgerDocument:
                 if ortho_err > 1e-6 or det_err > 1e-6:
                     result.errors.append(
                         f"{record.id} 旋转矩阵未正交归一："
-                        f"‖RᵀR−I‖∞={ortho_err:.3e}，|det−1|={det_err:.3e}"
+                        f"‖RᵀR-I‖∞={ortho_err:.3e}，|det-1|={det_err:.3e}"
                     )
             # 确认可构造
             _ = attitude.matrix()
@@ -587,7 +587,7 @@ class LedgerDocument:
 
 def make_sample_document() -> LedgerDocument:
     """示例账本（含 design/calibrated 双状态），几何自洽：
-    相机视轴沿 body −Z（对地），星敏光轴沿 body +X，SAR 波束偏离对地方向 30°；
+    相机视轴沿 body -Z（对地），星敏光轴沿 body +X，SAR 波束偏离对地方向 30°；
     T_st1_cam 由 design 值导出，design 回路精确闭合。
     """
     payload = {

@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>便携化工具箱 · UI 视觉规范 V2</title>
+<style>
+:root{
+  /* ===== 中性灰阶 ===== */
+  --n-0:#FFFFFF; --n-100:#F5F7FA; --n-200:#E7ECF2; --n-300:#D2DAE3; --n-400:#AEB9C6;
+  --n-500:#8592A2; --n-600:#64717F; --n-700:#47525F; --n-800:#2C353F; --n-900:#111820;
+  /* ===== 表面 ===== */
+  --s-app:#F5F7FA; --s-panel:#FFFFFF; --s-inset:#F7F9FB; --s-hover:#EFF3F8; --s-sel:#E4EEF6;
+  /* ===== 主色 ===== */
+  --primary:#2F6A8C; --primary-hv:#3A7B9F; --primary-active:#24546F;
+  --primary-bg:#EAF2F7; --primary-border:#BFD5E2; --primary-text:#1F4A62;
+  /* ===== 语义色 ===== */
+  --success:#1F7A57; --success-bg:#EAF3EE; --success-border:#A8CDBC; --success-text:#175C42;
+  --warning:#B07C16; --warning-bg:#FBF2DE; --warning-bg-hv:#F7E7CB; --warning-border:#E4C88C; --warning-text:#7A5409;
+  --danger:#AC3B41; --danger-bg:#FBEBEC; --danger-border:#E2B0B3; --danger-text:#85272C;
+  --info:#33668F; --info-bg:#EDF2F8; --info-border:#B9CCDF; --info-text:#244C6D;
+  /* ===== 图表 ===== */
+  --chart-1:#2F6A8C; --chart-2:#C4661F; --chart-3:#2E8A6E; --chart-4:#A34A50;
+  --chart-5:#6A5AA8; --chart-6:#7A6B3F; --chart-7:#3E8BA6; --chart-8:#6E6259;
+  /* ===== 字阶 ===== */
+  --fs-32:32px; --fs-26:26px; --fs-17:17px; --fs-15:15px; --fs-14:14px;
+  --fs-13:13px; --fs-12:12px; --fs-11:11px;
+  /* ===== 间距 / 圆角 / 尺寸 ===== */
+  --sp-1:2px; --sp-2:4px; --sp-3:6px; --sp-4:8px; --sp-5:12px; --sp-6:16px;
+  --sp-7:20px; --sp-8:24px; --sp-9:32px; --sp-10:40px;
+  --r-1:2px; --r-2:4px; --r-3:6px;
+  --h-sm:28px; --h-md:32px; --h-lg:36px;
+  --h-tab:36px; --h-page-header:44px; --h-kpi:76px; --h-status:26px;
+  --row-form:32px; --row-table:26px; --row-head:30px; --row-param:24px;
+  --font-cn:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC","Noto Sans CJK SC",sans-serif;
+  --font-num:"Cascadia Mono","Consolas","JetBrains Mono","DejaVu Sans Mono",monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  background:var(--s-app); color:var(--n-700);
+  font-family:var(--font-cn); font-size:var(--fs-13); line-height:20px;
+  font-feature-settings:"tnum" 1;
+}
+.wrap{max-width:1440px;margin:0 auto;padding:0 var(--sp-9) var(--sp-10)}
+
+/* ---------- 封面 ---------- */
+.cover{padding:56px 0 28px;border-bottom:1px solid var(--n-200)}
+.eyebrow{
+  font-family:var(--font-num);font-size:var(--fs-11);font-weight:600;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--primary);
+}
+h1{
+  margin-top:var(--sp-5);font-size:34px;line-height:44px;font-weight:700;
+  color:var(--n-900);letter-spacing:-.01em;
+}
+.lede{margin-top:var(--sp-5);max-width:660px;font-size:var(--fs-14);line-height:22px;color:var(--n-600)}
+.meta{
+  margin-top:var(--sp-7);display:flex;flex-wrap:wrap;gap:var(--sp-2) var(--sp-6);
+  font-family:var(--font-num);font-size:var(--fs-11);color:var(--n-500);
+}
+.meta b{color:var(--n-700);font-weight:600}
+
+/* ---------- 章节 ---------- */
+section{padding-top:var(--sp-10)}
+.sec-head{display:flex;align-items:baseline;gap:var(--sp-4);padding-bottom:var(--sp-4);border-bottom:1px solid var(--n-200);margin-bottom:var(--sp-6)}
+.sec-num{font-family:var(--font-num);font-size:var(--fs-11);font-weight:600;color:var(--primary);letter-spacing:.08em}
+.sec-head h2{font-size:var(--fs-17);line-height:24px;font-weight:600;color:var(--n-900)}
+.sec-note{margin-left:auto;font-size:var(--fs-12);color:var(--n-500)}
+.sub{margin:var(--sp-7) 0 var(--sp-4);font-size:var(--fs-14);line-height:20px;font-weight:600;color:var(--n-800)}
+.prose{max-width:720px;color:var(--n-700)}
+.prose + .prose{margin-top:var(--sp-3)}
+.prose code,.mono{font-family:var(--font-num);font-size:var(--fs-12);color:var(--n-800);background:var(--n-100);border-radius:var(--r-1);padding:1px 4px}
+
+/* ---------- 色板 ---------- */
+.ramp{display:grid;grid-template-columns:repeat(auto-fit,minmax(78px,1fr));gap:var(--sp-2)}
+.chip{border:1px solid var(--n-200);border-radius:var(--r-1);overflow:hidden;background:var(--n-0)}
+.chip .sw{height:48px}
+.chip .tx{padding:var(--sp-1) var(--sp-3) var(--sp-2)}
+.chip .nm{font-family:var(--font-num);font-size:var(--fs-11);font-weight:600;color:var(--n-800)}
+.chip .hx{font-family:var(--font-num);font-size:10px;color:var(--n-500)}
+.chip .us{margin-top:var(--sp-1);font-size:10px;line-height:13px;color:var(--n-600)}
+
+.sem{display:grid;grid-template-columns:repeat(auto-fit,minmax(228px,1fr));gap:var(--sp-4)}
+.sem-card{background:var(--n-0);border:1px solid var(--n-200);border-radius:var(--r-2);overflow:hidden}
+.sem-card .hd{padding:var(--sp-3) var(--sp-4);border-bottom:1px solid var(--n-200);display:flex;justify-content:space-between;align-items:center}
+.sem-card .hd .nm{font-size:var(--fs-12);font-weight:600;color:var(--n-800)}
+.sem-card .hd .hx{font-family:var(--font-num);font-size:var(--fs-11);color:var(--n-600)}
+.tones{display:grid;grid-template-columns:repeat(4,1fr)}
+.tone{height:40px}
+.tonecap{display:grid;grid-template-columns:repeat(4,1fr);padding:var(--sp-1) 0 var(--sp-2)}
+.tonecap span{text-align:center;font-family:var(--font-num);font-size:10px;color:var(--n-500)}
+
+/* ---------- 图表色板 ---------- */
+.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:var(--sp-4)}
+.chart-cell{background:var(--n-0);border:1px solid var(--n-200);border-radius:var(--r-2);padding:var(--sp-4)}
+.chart-line{height:14px;display:flex;align-items:center}
+.chart-line i{display:block;width:100%;height:0;border-top-width:2px;border-top-style:solid}
+.chart-cell .nm{margin-top:var(--sp-3);font-family:var(--font-num);font-size:var(--fs-11);font-weight:600;color:var(--n-800)}
+.chart-cell .rl{margin-top:var(--sp-1);font-size:var(--fs-11);line-height:15px;color:var(--n-600)}
+
+/* ---------- 字阶 ---------- */
+.spec-table{width:100%;border-collapse:collapse;background:var(--n-0);border:1px solid var(--n-200);border-radius:var(--r-2);overflow:hidden}
+.spec-table th{
+  text-align:left;font-size:var(--fs-12);font-weight:600;color:var(--n-600);
+  background:var(--n-100);border-bottom:1px solid var(--n-300);padding:0 var(--sp-4);height:30px;white-space:nowrap;
+}
+.spec-table td{border-bottom:1px solid var(--n-200);padding:var(--sp-3) var(--sp-4);vertical-align:middle}
+.spec-table tr:last-child td{border-bottom:none}
+.spec-table .tk{font-family:var(--font-num);font-size:var(--fs-11);color:var(--primary);font-weight:600;white-space:nowrap}
+.spec-table .sp{font-family:var(--font-num);font-size:var(--fs-11);color:var(--n-600);white-space:nowrap}
+.samp{color:var(--n-900);white-space:nowrap}
+
+/* ---------- 间距 / 圆角 ---------- */
+.sp-row{display:flex;align-items:center;gap:var(--sp-5);padding:var(--sp-2) 0}
+.sp-row .lb{font-family:var(--font-num);font-size:var(--fs-11);color:var(--n-600);width:66px;flex:none}
+.sp-row .bar{height:10px;background:var(--primary-bg);border-left:2px solid var(--primary);border-radius:0 1px 1px 0}
+.radii{display:flex;gap:var(--sp-5);flex-wrap:wrap}
+.rad{width:104px;background:var(--n-0);border:1px solid var(--n-300);padding:var(--sp-4)}
+.rad .nm{font-family:var(--font-num);font-size:var(--fs-11);font-weight:600;color:var(--n-800)}
+.rad .ds{font-size:10px;line-height:14px;color:var(--n-500);margin-top:var(--sp-1)}
+
+/* ---------- 窗口外壳 ---------- */
+.frame{
+  background:var(--n-0);border:1px solid var(--n-300);border-radius:var(--r-3);
+  box-shadow:0 4px 12px rgba(17,24,32,.14);  /* 唯一允许的浮层阴影 */
+  overflow:hidden;
+}
+/* 页签栏 */
+.tabbar{display:flex;align-items:stretch;height:var(--h-tab);background:var(--n-0);border-bottom:1px solid var(--n-200);padding:0 var(--sp-3)}
+.tab{
+  display:flex;align-items:center;padding:0 var(--sp-5);font-size:var(--fs-13);
+  color:var(--n-600);border-bottom:2px solid transparent;white-space:nowrap;
+}
+.tab.on{color:var(--primary);font-weight:600;border-bottom-color:var(--primary)}
+.tab.dis{color:var(--n-400)}
+.tabbar-note{margin-left:auto;display:flex;align-items:center;font-family:var(--font-num);font-size:var(--fs-11);color:var(--n-500);padding-right:var(--sp-4)}
+
+/* 旧版对照 */
+.legacy{display:flex;align-items:center;height:var(--h-tab);background:var(--n-0);border-bottom:1px solid var(--n-200);padding:0 var(--sp-3);gap:3px;overflow:hidden}
+.legacy .t{
+  height:26px;display:flex;align-items:center;padding:0 var(--sp-4);
+  background:var(--n-200);border:1px solid var(--n-300);border-radius:2px;font-size:var(--fs-13);color:var(--n-700);white-space:nowrap;
+}
+.legacy .t.on{background:var(--n-0);border-bottom-color:var(--n-0);font-weight:600;color:var(--n-900)}
+.legacy .cut{overflow:hidden;text-overflow:clip;max-width:64px}
+.legacy .arr{width:18px;height:26px;background:var(--n-200);border:1px solid var(--n-300);border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--n-600)}
+.cmp-label{display:flex;align-items:center;gap:var(--sp-3);margin:var(--sp-5) 0 var(--sp-2);font-family:var(--font-num);font-size:var(--fs-11);color:var(--n-500)}
+.cmp-label b{color:var(--n-800);font-weight:600;font-size:var(--fs-12);font-family:var(--font-cn)}
+.cmp-label .tag{background:var(--danger-bg);border:1px solid var(--danger-border);color:var(--danger-text);border-radius:var(--r-1);padding:0 5px}
+.cmp-label .tag.ok{background:var(--success-bg);border-color:var(--success-border);color:var(--success-text)}
+.cmp-body{background:var(--n-0);border:1px solid var(--n-200);border-radius:var(--r-2);overflow:hidden}
+
+/* 状态栏 */
+.statusbar{
+  display:flex;align-items:center;height:var(--h-status);padding:0 var(--sp-4);
+  background:var(--n-100);border-top:1px solid var(--n-200);
+  font-size:var(--fs-12);color:var(--n-600);
+}
+.statusbar .right{margin-left:auto;display:flex;align-items:center;gap:var(--sp-4);font-family:var(--font-num);font-size:var(--fs-11)}
+.statusbar .prog{width:72px;height:6px;background:var(--n-200);border-radius:var(--r-1);overflow:hidden}
+.statusbar .prog i{display:block;height:100%;width:62%;background:var(--primary);border-radius:var(--r-1)}
+
+/* ---------- 工作页 ---------- */
+.work{display:grid;grid-template-columns:232px 1fr;background:var(--n-0);border-top:1px solid var(--n-200);min-height:520px}
+.nav{background:var(--s-inset);border-right:1px solid var(--n-200);padding:var(--sp-4) 0}
+.nav .grp{font-size:var(--fs-11);font-weight:600;color:var(--n-500);letter-spacing:.06em;padding:var(--sp-4) var(--sp-5) var(--sp-2)}
+.nav .it{display:flex;align-items:center;gap:var(--sp-4);height:30px;padding:0 var(--sp-5);font-size:var(--fs-13);color:var(--n-700);border-left:3px solid transparent}
+.nav .it.on{background:var(--s-sel);border-left-color:var(--primary);color:var(--n-900);font-weight:600}
+.nav .dot{width:5px;height:5px;background:var(--n-400);border-radius:50%;flex:none}
+.nav .it.on .dot{background:var(--primary)}
+
+.main{padding:0;min-width:0}
+.page-header{
+  display:flex;align-items:center;gap:var(--sp-4);height:var(--h-page-header);
+  padding:0 var(--sp-6);border-bottom:1px solid var(--n-200);background:var(--n-0);
+}
+.page-header h3{font-size:var(--fs-17);line-height:24px;font-weight:600;color:var(--n-900)}
+.page-header .sub-t{font-size:var(--fs-12);color:var(--n-600);padding-top:2px}
+.page-header .acts{margin-left:auto;display:flex;gap:var(--sp-4)}
+
+.body{padding:var(--sp-5) var(--sp-6) var(--sp-6)}
+
+/* 按钮 */
+.btn{
+  display:inline-flex;align-items:center;gap:var(--sp-3);height:var(--h-md);
+  padding:0 14px;border-radius:var(--r-2);border:1px solid var(--n-300);
+  background:var(--n-0);color:var(--n-800);font-size:var(--fs-13);font-family:var(--font-cn);
+  white-space:nowrap;line-height:1;
+}
+.btn.sm{height:var(--h-sm);font-size:var(--fs-12);padding:0 10px}
+.btn.lg{height:var(--h-lg);font-size:var(--fs-13);padding:0 18px;font-weight:600}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff;font-weight:600}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--primary);padding:0 8px}
+.btn.danger{background:var(--n-0);border-color:var(--danger-border);color:var(--danger-text)}
+.btn:hover{border-color:var(--n-400);background:var(--s-hover)}
+.btn.primary:hover{background:var(--primary-hv);border-color:var(--primary-hv)}
+.btn.ghost:hover{background:var(--s-hover);border-color:transparent}
+.btn.danger:hover{background:var(--danger-bg);border-color:var(--danger-border)}
+.btn[disabled]{background:var(--n-100);border-color:var(--n-200);color:var(--n-400)}
+.btn.primary[disabled]{background:var(--n-400);border-color:var(--n-400);color:#fff}
+.i16{width:14px;height:14px;flex:none;position:relative}
+.i16::before,.i16::after{content:"";position:absolute;background:currentColor}
+.i16.plus::before{left:0;right:0;top:6px;height:1.5px}
+.i16.plus::after{top:0;bottom:0;left:6px;width:1.5px}
+
+/* KPI */
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--sp-4)}
+.kpi{
+  display:flex;background:var(--n-0);border:1px solid var(--n-200);border-radius:var(--r-2);
+  min-height:var(--h-kpi);overflow:hidden;
+}
+.kpi .acc{width:3px;flex:none}
+.kpi .acc.primary{background:var(--primary)}
+.kpi .acc.success{background:var(--success)}
+.kpi .acc.neutral{background:var(--n-300)}
+.kpi .in{padding:var(--sp-5) 14px;display:flex;flex-direction:column;justify-content:space-between;width:100%;min-width:0}
+.kpi .lb{font-size:var(--fs-12);font-weight:600;color:var(--n-600);white-space:nowrap}
+.kpi .vl{display:flex;align-items:baseline;gap:var(--sp-1);min-width:0}
+.kpi .n{font-family:var(--font-num);font-size:var(--fs-26);line-height:32px;font-weight:700;color:var(--n-900);font-variant-numeric:tabular-nums}
+.kpi .u{font-size:var(--fs-12);color:var(--n-600);white-space:nowrap}
+.kpi .n.none{color:var(--n-500);letter-spacing:.06em}
+
+/* 双栏 */
+.cols{display:grid;grid-template-columns:360px minmax(0,1fr);gap:var(--sp-5);margin-top:var(--sp-5);align-items:start}
+
+/* 组框 / 卡 */
+.gbox{background:var(--n-0);border:1px solid var(--n-200);border-radius:var(--r-2);padding:var(--sp-2) var(--sp-4) var(--sp-4);position:relative}
+.gbox > .ttl{
+  position:absolute;top:-9px;left:var(--sp-4);background:var(--n-0);padding:0 var(--sp-3);
+  font-size:var(--fs-14);line-height:18px;font-weight:600;color:var(--n-800);
+}
+.gbox > .bd{padding-top:var(--sp-4)}
+
+/* 表单 */
+.field{display:grid;grid-template-columns:88px minmax(0,1fr);gap:var(--sp-3);align-items:center;height:var(--h-md)}
+.field + .field{margin-top:0}
+.field label{font-size:var(--fs-12);font-weight:600;color:var(--n-600);text-align:right;white-space:nowrap}
+.ipt{
+  height:var(--h-sm);max-width:220px;width:100%;border:1px solid var(--n-300);border-radius:var(--r-1);
+  background:var(--n-0);display:flex;align-items:center;padding:0 var(--sp-4);
+  font-family:var(--font-num);font-size:var(--fs-13);color:var(--n-800);
+  font-variant-numeric:tabular-nums;
+}
+.ipt .trail{margin-left:auto;color:var(--n-400);font-size:9px;padding-left:var(--sp-3);font-family:var(--font-cn)}
+.ipt.focus{border-color:var(--primary)}
+.ipt.err{border-color:var(--danger)}
+.ipt.dis{background:var(--n-100);border-color:var(--n-200);color:var(--n-400)}
+.ipt.ph{color:var(--n-500)}
+.hintline{margin-top:var(--sp-3);font-size:var(--fs-12);color:var(--n-600)}
+
+/* 结果卡 */
+.rcard{background:var(--n-0);border:1px solid var(--n-200);border-radius:var(--r-2);padding:14px var(--sp-6) var(--sp-5)}
+.rhead{display:flex;align-items:center;gap:var(--sp-3)}
+.rhead .lb{font-size:var(--fs-12);font-weight:600;color:var(--n-600)}
+.badge{
+  display:inline-flex;align-items:center;height:20px;padding:0 6px;border-radius:var(--r-1);
+  border:1px solid var(--n-200);background:var(--n-100);color:var(--n-600);
+  font-size:var(--fs-11);font-weight:600;white-space:nowrap;line-height:1;
+}
+.badge.primary{background:var(--primary-bg);border-color:var(--primary-border);color:var(--primary-text)}
+.badge.success{background:var(--success-bg);border-color:var(--success-border);color:var(--success-text)}
+.badge.warning{background:var(--warning-bg);border-color:var(--warning-border);color:var(--warning-text)}
+.badge.danger{background:var(--danger-bg);border-color:var(--danger-border);color:var(--danger-text)}
+.rhead .sp{margin-left:auto}
+.rvalue{display:flex;align-items:baseline;gap:var(--sp-2);margin-top:var(--sp-3)}
+.rvalue .n{font-family:var(--font-num);font-size:var(--fs-32);line-height:40px;font-weight:700;color:var(--n-900);font-variant-numeric:tabular-nums}
+.rvalue .u{font-size:var(--fs-14);color:var(--n-600)}
+.rvalue .sp{margin-left:auto}
+
+.ptab{margin-top:var(--sp-5);border-top:1px solid var(--n-200)}
+.prow{display:grid;grid-template-columns:minmax(0,140px) 1fr;gap:var(--sp-4);align-items:center;height:var(--row-param);border-bottom:1px solid var(--n-200)}
+.prow .k{font-size:var(--fs-13);color:var(--n-600);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prow .v{font-family:var(--font-num);font-size:var(--fs-13);color:var(--n-800);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prow .v em{font-style:normal;font-family:var(--font-cn);font-size:var(--fs-12);color:var(--n-600)}
+.prow .v .seg + .seg{margin-left:var(--sp-6)}   /* 两组信息用 16px margin 分隔，不用全角空格 */
+
+.hint{
+  display:flex;gap:var(--sp-3);margin-top:var(--sp-4);padding:var(--sp-3) var(--sp-4);
+  background:var(--info-bg);border-left:3px solid var(--info);border-radius:var(--r-1);
+  font-size:var(--fs-12);line-height:18px;color:var(--info-text);
+}
+.hint .mk{flex:none;font-family:var(--font-num);font-weight:600}
+
+/* 表格 */
+.tblwrap{margin-top:var(--sp-4);border:1px solid var(--n-200);border-radius:var(--r-1);overflow:hidden;background:var(--n-0)}
+table.data{width:100%;border-collapse:collapse;font-size:var(--fs-13)}
+table.data th{
+  height:var(--row-head);background:var(--n-100);border-bottom:1px solid var(--n-300);
+  font-size:var(--fs-12);font-weight:600;color:var(--n-600);text-align:left;padding:0 10px;white-space:nowrap;
+}
+table.data td{height:var(--row-table);padding:0 10px;border-bottom:1px solid var(--n-200);color:var(--n-700);white-space:nowrap}
+table.data tr:nth-child(even) td{background:var(--s-inset)}
+table.data tr:last-child td{border-bottom:none}
+table.data .num{text-align:right;font-family:var(--font-num);font-variant-numeric:tabular-nums;color:var(--n-800)}
+table.data .ctr{text-align:center}
+table.data .sel td{background:var(--s-sel);color:var(--n-900)}
+
+/* 组件网格 */
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-4)}
+@media (max-width:1000px){.grid2{grid-template-columns:minmax(0,1fr)}}
+.demo{background:var(--n-0);border:1px solid var(--n-200);border-radius:var(--r-2);padding:var(--sp-4) var(--sp-5) var(--sp-5)}
+.demo .dt{font-size:var(--fs-12);font-weight:600;color:var(--n-600);margin-bottom:var(--sp-4);display:flex;align-items:center;gap:var(--sp-3)}
+.demo .dt .mono{font-size:var(--fs-11);color:var(--primary);background:none;padding:0}
+.row{display:flex;flex-wrap:wrap;gap:var(--sp-4);align-items:center}
+
+.empty{
+  min-height:120px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--sp-2);
+  background:var(--s-inset);border:1px dashed var(--n-300);border-radius:var(--r-1);padding:var(--sp-5);
+}
+.empty .ic{width:32px;height:32px;border:1px solid var(--n-300);border-radius:var(--r-1);position:relative}
+.empty .ic::before{content:"";position:absolute;left:8px;right:8px;top:15px;height:1px;background:var(--n-400)}
+.empty .t{font-size:var(--fs-13);color:var(--n-600)}
+.empty .h{font-size:var(--fs-12);color:var(--n-500)}
+
+.errbar{
+  display:flex;align-items:center;gap:var(--sp-3);min-height:28px;padding:var(--sp-2) var(--sp-4);
+  background:var(--danger-bg);border-left:3px solid var(--danger);border-radius:var(--r-1);
+  font-size:var(--fs-12);color:var(--danger-text);
+}
+.scroll-track{width:10px;height:96px;background:transparent;position:relative;border:1px solid var(--n-200);border-radius:var(--r-1)}
+.scroll-track i{position:absolute;left:0;right:0;top:6px;height:44px;background:var(--n-300);border-radius:5px}
+
+/* 原则 */
+.principles{display:grid;grid-template-columns:repeat(auto-fit,minmax(258px,1fr));gap:var(--sp-4)}
+.pr{background:var(--n-0);border:1px solid var(--n-200);border-left:3px solid var(--primary);border-radius:var(--r-2);padding:var(--sp-4) var(--sp-5)}
+.pr .h{font-size:var(--fs-13);font-weight:600;color:var(--n-900);display:flex;gap:var(--sp-3)}
+.pr .h span{font-family:var(--font-num);font-size:var(--fs-11);color:var(--primary);padding-top:3px}
+.pr .b{margin-top:var(--sp-2);font-size:var(--fs-13);line-height:19px;color:var(--n-600)}
+.pr .no{margin-top:var(--sp-3);padding-top:var(--sp-2);border-top:1px solid var(--n-200);font-size:var(--fs-12);line-height:18px;color:var(--n-700)}
+.pr .no b{color:var(--danger-text);font-weight:600}
+
+/* 禁止清单 */
+.bans{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:var(--sp-4)}
+.ban{background:var(--n-0);border:1px solid var(--n-200);border-radius:var(--r-2);padding:var(--sp-3) var(--sp-4);display:grid;grid-template-columns:16px 1fr;gap:var(--sp-3);font-size:var(--fs-12);line-height:18px}
+.ban .x{color:var(--danger);font-weight:700;font-family:var(--font-num)}
+.ban .txt b{color:var(--n-900);font-weight:600}
+.ban .txt i{font-style:normal;color:var(--n-600)}
+
+.foot{margin-top:var(--sp-10);padding-top:var(--sp-5);border-top:1px solid var(--n-200);display:flex;flex-wrap:wrap;gap:var(--sp-4);font-size:var(--fs-12);color:var(--n-500)}
+.foot .r{margin-left:auto;font-family:var(--font-num);font-size:var(--fs-11)}
+
+/* ---------- 响应式：1024 不横向溢出 ---------- */
+@media (max-width:1180px){
+  .wrap{padding:0 var(--sp-6) var(--sp-9)}
+  .work{grid-template-columns:176px 1fr}
+  .kpis{grid-template-columns:repeat(2,1fr)}
+  .cols{grid-template-columns:minmax(0,1fr)}
+  h1{font-size:28px;line-height:36px}
+  .tabbar-note{display:none}
+}
+@media (max-width:860px){
+  .work{grid-template-columns:1fr}
+  .nav{display:none}
+  .kpis{grid-template-columns:1fr}
+  .tabbar{overflow:hidden}
+  .tab{padding:0 var(--sp-3);font-size:var(--fs-12)}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ================= 封面 ================= -->
+  <header class="cover">
+    <div class="eyebrow">Radar Toolbox · Design Language V2</div>
+    <h1>仪器面板，不是 SaaS 仪表盘</h1>
+    <p class="lede">
+      冷灰蓝的低饱和主色、1px 发丝描边、等宽数字。视觉噪声全部让给数据本身——
+      在 1024×640 的最小窗口和 9 个页签的密集信息下，这套语言不会塌。
+    </p>
+    <div class="meta">
+      <span><b>栈</b> PyQt5 5.15 · Fusion · QSS · matplotlib</span>
+      <span><b>画布</b> 1440×900，1024px 宽不横向溢出</span>
+      <span><b>主题</b> 仅浅色</span>
+      <span><b>令牌</b> 中性 10 档 · 语义 4 组 · 图表 8 色</span>
+    </div>
+  </header>
+
+  <!-- ================= 01 原则 ================= -->
+  <section>
+    <div class="sec-head"><span class="sec-num">01</span><h2>设计原则</h2><span class="sec-note">每条都附「因此不做什么」</span></div>
+    <div class="principles">
+      <div class="pr">
+        <div class="h"><span>P1</span>信息密度优先</div>
+        <div class="b">所有间距来自 4px 栅格序列，留白只用于分组，不用于装饰。</div>
+        <div class="no"><b>不做</b>：大圆角卡片堆叠、hero 区、32px 以上区块空档。</div>
+      </div>
+      <div class="pr">
+        <div class="h"><span>P2</span>层次靠三件套</div>
+        <div class="b">底色差 + 1px 描边 + 字重。QSS 没有 box-shadow，与其造假阴影不如彻底放弃。</div>
+        <div class="no"><b>不做</b>：弥散投影、玻璃拟态、悬浮抬升。</div>
+      </div>
+      <div class="pr">
+        <div class="h"><span>P3</span>一个动作一种颜色</div>
+        <div class="b">蓝色只代表「可操作 / 当前」，一屏只允许一个 primary 实心按钮。</div>
+        <div class="no"><b>不做</b>：绿色主按钮、渐变按钮、彩色描边公式块。</div>
+      </div>
+      <div class="pr">
+        <div class="h"><span>P4</span>数字必须能竖着比</div>
+        <div class="b">数值用等宽族 + 右对齐；单位从单元格里拿出来，放进表头或独立 span。</div>
+        <div class="no"><b>不做</b>：把「16.4 mm」塞进一个单元格、用比例数字体显示 KPI。</div>
+      </div>
+      <div class="pr">
+        <div class="h"><span>P5</span>没有魔法值</div>
+        <div class="b">颜色、字号、间距只能引用令牌名；113 处内联 setStyleSheet 全部清除。</div>
+        <div class="no"><b>不做</b>：局部覆盖样式、emoji 当功能图标、8~10px 圆角。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 02 色板 ================= -->
+  <section>
+    <div class="sec-head"><span class="sec-num">02</span><h2>色板</h2><span class="sec-note">每个 HEX 都能在规范 §3 找到同名令牌</span></div>
+
+    <div class="sub">中性灰阶 · 10 档（冷灰，hue 210）</div>
+    <div class="ramp">
+      <div class="chip"><div class="sw" style="background:var(--n-0)"></div><div class="tx"><div class="nm">n-0</div><div class="hx">#FFFFFF</div><div class="us">卡片 / 输入底</div></div></div>
+      <div class="chip"><div class="sw" style="background:var(--n-100)"></div><div class="tx"><div class="nm">n-100</div><div class="hx">#F5F7FA</div><div class="us">窗口 / 表头底</div></div></div>
+      <div class="chip"><div class="sw" style="background:var(--n-200)"></div><div class="tx"><div class="nm">n-200</div><div class="hx">#E7ECF2</div><div class="us">分隔线 / 容器描边</div></div></div>
+      <div class="chip"><div class="sw" style="background:var(--n-300)"></div><div class="tx"><div class="nm">n-300</div><div class="hx">#D2DAE3</div><div class="us">控件描边</div></div></div>
+      <div class="chip"><div class="sw" style="background:var(--n-400)"></div><div class="tx"><div class="nm">n-400</div><div class="hx">#AEB9C6</div><div class="us">禁用描边 / 图标</div></div></div>
+      <div class="chip"><div class="sw" style="background:var(--n-500)"></div><div class="tx"><div class="nm">n-500</div><div class="hx">#8592A2</div><div class="us">仅占位符 3.17:1</div></div></div>
+      <div class="chip"><div class="sw" style="background:var(--n-600)"></div><div class="tx"><div class="nm">n-600</div><div class="hx">#64717F</div><div class="us">次要文字 4.99:1</div></div></div>
+      <div class="chip"><div class="sw" style="background:var(--n-700)"></div><div class="tx"><div class="nm">n-700</div><div class="hx">#47525F</div><div class="us">正文 7.95:1</div></div></div>
+      <div class="chip"><div class="sw" style="background:var(--n-800)"></div><div class="tx"><div class="nm">n-800</div><div class="hx">#2C353F</div><div class="us">卡头 12.4:1</div></div></div>
+      <div class="chip"><div class="sw" style="background:var(--n-900)"></div><div class="tx"><div class="nm">n-900</div><div class="hx">#111820</div><div class="us">标题 / 主值</div></div></div>
+    </div>
+
+    <div class="sub">语义色 · 4 组成套固定（底色档 / 描边档 / 主档 / 文字档）</div>
+    <div class="sem">
+      <div class="sem-card">
+        <div class="hd"><span class="nm">Primary · 可操作 / 当前</span><span class="hx">#2F6A8C</span></div>
+        <div class="tones">
+          <div class="tone" style="background:var(--primary-bg)"></div>
+          <div class="tone" style="background:var(--primary-border)"></div>
+          <div class="tone" style="background:var(--primary)"></div>
+          <div class="tone" style="background:var(--primary-text)"></div>
+        </div>
+        <div class="tonecap"><span>bg</span><span>border</span><span>主档</span><span>text</span></div>
+      </div>
+      <div class="sem-card">
+        <div class="hd"><span class="nm">Success · 成功 / 达标</span><span class="hx">#1F7A57</span></div>
+        <div class="tones">
+          <div class="tone" style="background:var(--success-bg)"></div>
+          <div class="tone" style="background:var(--success-border)"></div>
+          <div class="tone" style="background:var(--success)"></div>
+          <div class="tone" style="background:var(--success-text)"></div>
+        </div>
+        <div class="tonecap"><span>bg</span><span>border</span><span>主档</span><span>text</span></div>
+      </div>
+      <div class="sem-card">
+        <div class="hd"><span class="nm">Warning · 警告 / 需确认</span><span class="hx">#B07C16</span></div>
+        <div class="tones">
+          <div class="tone" style="background:var(--warning-bg)"></div>
+          <div class="tone" style="background:var(--warning-border)"></div>
+          <div class="tone" style="background:var(--warning)"></div>
+          <div class="tone" style="background:var(--warning-text)"></div>
+        </div>
+        <div class="tonecap"><span>bg</span><span>border</span><span>主档</span><span>text</span></div>
+      </div>
+      <div class="sem-card">
+        <div class="hd"><span class="nm">Danger · 错误 / 破坏性</span><span class="hx">#AC3B41</span></div>
+        <div class="tones">
+          <div class="tone" style="background:var(--danger-bg)"></div>
+          <div class="tone" style="background:var(--danger-border)"></div>
+          <div class="tone" style="background:var(--danger)"></div>
+          <div class="tone" style="background:var(--danger-text)"></div>
+        </div>
+        <div class="tonecap"><span>bg</span><span>border</span><span>主档</span><span>text</span></div>
+      </div>
+      <div class="sem-card">
+        <div class="hd"><span class="nm">Info · 说明 / 提示</span><span class="hx">#33668F</span></div>
+        <div class="tones">
+          <div class="tone" style="background:var(--info-bg)"></div>
+          <div class="tone" style="background:var(--info-border)"></div>
+          <div class="tone" style="background:var(--info)"></div>
+          <div class="tone" style="background:var(--info-text)"></div>
+        </div>
+        <div class="tonecap"><span>bg</span><span>border</span><span>主档</span><span>text</span></div>
+      </div>
+      <div class="sem-card">
+        <div class="hd"><span class="nm">表面 / 交互底</span><span class="hx">s-*</span></div>
+        <div class="tones">
+          <div class="tone" style="background:var(--s-app)"></div>
+          <div class="tone" style="background:var(--s-inset)"></div>
+          <div class="tone" style="background:var(--s-hover)"></div>
+          <div class="tone" style="background:var(--s-sel)"></div>
+        </div>
+        <div class="tonecap"><span>app L0</span><span>inset L3</span><span>hover</span><span>sel</span></div>
+      </div>
+    </div>
+    <p class="prose" style="margin-top:var(--sp-4)">
+      主色从 <code>#2563EB</code>（HSL 221/83%/53%）换成 <code>#2F6A8C</code>（HSL 200/50%/37%）：饱和度 83% → 50%，亮度 53% → 37%，色相 221° → 200°。问题不在对比度（5.17:1 本就够用），而在高饱和纯蓝大面积出现时会持续抢注意力；白字对比 5.17:1 → <b>5.90:1</b>。
+      它读起来像仪表刻度蓝，而不是按钮蓝——在密集表格旁边能安静地表示状态。
+    </p>
+
+    <div class="sub">图表色板 · 8 色（浅底白卡可辨，全部 ≥3.8:1）</div>
+    <div class="charts">
+      <div class="chart-cell"><div class="chart-line"><i style="border-top-color:var(--chart-1);border-top-width:2px"></i></div><div class="nm">chart-1 #2F6A8C</div><div class="rl">主序列 / 参考真值<br>实线 1.4px</div></div>
+      <div class="chart-cell"><div class="chart-line"><i style="border-top-color:var(--chart-2);border-top-width:2px"></i></div><div class="nm">chart-2 #C4661F</div><div class="rl">实测 / 测量值<br>实线 1.4px</div></div>
+      <div class="chart-cell"><div class="chart-line"><i style="border-top-color:var(--chart-3);border-top-width:2px"></i></div><div class="nm">chart-3 #2E8A6E</div><div class="rl">拟合 / 理论值<br>实线 1.4px</div></div>
+      <div class="chart-cell"><div class="chart-line"><i style="border-top-color:var(--chart-4);border-top-width:2px"></i></div><div class="nm">chart-4 #A34A50</div><div class="rl">超差 / 异常点<br>实线 + marker</div></div>
+      <div class="chart-cell"><div class="chart-line"><i style="border-top-color:var(--chart-5);border-top-width:1.2px"></i></div><div class="nm">chart-5 #6A5AA8</div><div class="rl">仿真 / 第三组<br>实线 1.2px</div></div>
+      <div class="chart-cell"><div class="chart-line"><i style="border-top-color:var(--chart-6);border-top-width:1.2px;border-top-style:dashed"></i></div><div class="nm">chart-6 #7A6B3F</div><div class="rl">参考线 / 包络<br>虚线 (4,3)</div></div>
+      <div class="chart-cell"><div class="chart-line"><i style="border-top-color:var(--chart-7);border-top-width:1.4px;opacity:.85"></i></div><div class="nm">chart-7 #3E8BA6</div><div class="rl">辅助 / 背景系列<br>实线 1.0px α.85</div></div>
+      <div class="chart-cell"><div class="chart-line"><i style="border-top-color:var(--chart-8);border-top-width:1.1px;border-top-style:dotted"></i></div><div class="nm">chart-8 #6E6259</div><div class="rl">基准 / 网格标注<br>点线 1.0px</div></div>
+    </div>
+  </section>
+
+  <!-- ================= 03 字阶与尺度 ================= -->
+  <section>
+    <div class="sec-head"><span class="sec-num">03</span><h2>字阶与尺度</h2><span class="sec-note">中文优先，正文不小于 12px</span></div>
+
+    <table class="spec-table">
+      <thead><tr><th style="width:96px">令牌</th><th>样本</th><th style="width:120px">字号 / QSS</th><th style="width:64px">字重</th><th style="width:64px">行高</th><th style="width:104px">字体族</th><th>场景</th></tr></thead>
+      <tbody>
+        <tr><td class="tk">fs-32</td><td><span class="samp" style="font-family:var(--font-num);font-size:var(--fs-32);line-height:40px;font-weight:700">42.7</span></td><td class="sp">32px / 24pt</td><td class="sp">700</td><td class="sp">40px</td><td class="sp">等宽</td><td style="font-size:12px;color:var(--n-600)">结果卡主结果，一屏最多 1 处</td></tr>
+        <tr><td class="tk">fs-26</td><td><span class="samp" style="font-family:var(--font-num);font-size:var(--fs-26);line-height:32px;font-weight:700">32.4</span></td><td class="sp">26px / 19.5pt</td><td class="sp">700</td><td class="sp">32px</td><td class="sp">等宽</td><td style="font-size:12px;color:var(--n-600)">KPI 卡数值</td></tr>
+        <tr><td class="tk">fs-17</td><td><span class="samp" style="font-size:var(--fs-17);line-height:24px;font-weight:600">指标计算器</span></td><td class="sp">17px / 13pt</td><td class="sp">600</td><td class="sp">24px</td><td class="sp">中文</td><td style="font-size:12px;color:var(--n-600)">页面标题，每页仅 1 个</td></tr>
+        <tr><td class="tk">fs-15</td><td><span class="samp" style="font-size:var(--fs-15);line-height:22px;font-weight:600">链路预算结果</span></td><td class="sp">15px / 11pt</td><td class="sp">600</td><td class="sp">22px</td><td class="sp">中文</td><td style="font-size:12px;color:var(--n-600)">区块标题 H2</td></tr>
+        <tr><td class="tk">fs-14</td><td><span class="samp" style="font-size:var(--fs-14);line-height:20px;font-weight:600">天线与发射参数</span></td><td class="sp">14px / 10.5pt</td><td class="sp">600</td><td class="sp">20px</td><td class="sp">中文</td><td style="font-size:12px;color:var(--n-600)">卡头 / 组框标题 H3</td></tr>
+        <tr><td class="tk">fs-13</td><td><span class="samp" style="font-size:var(--fs-13);line-height:20px">正文默认字号，中文优先。</span></td><td class="sp">13px / 10pt</td><td class="sp">400</td><td class="sp">20px</td><td class="sp">中文</td><td style="font-size:12px;color:var(--n-600)">正文默认</td></tr>
+        <tr><td class="tk">fs-12</td><td><span class="samp" style="font-size:var(--fs-12);line-height:18px;color:var(--n-600)">次要说明与单位 mm</span></td><td class="sp">12px / 9pt</td><td class="sp">400</td><td class="sp">18px</td><td class="sp">中文</td><td style="font-size:12px;color:var(--n-600)">说明、单位、辅助提示</td></tr>
+        <tr><td class="tk">fs-12s</td><td><span class="samp" style="font-size:var(--fs-12);line-height:16px;font-weight:600;color:var(--n-600)">工作频率</span></td><td class="sp">12px / 9pt</td><td class="sp">600</td><td class="sp">16px</td><td class="sp">中文</td><td style="font-size:12px;color:var(--n-600)">表单标签、表头</td></tr>
+        <tr><td class="tk">fs-11</td><td><span class="samp" style="font-family:var(--font-num);font-size:var(--fs-11);font-weight:600">v1.1.1</span></td><td class="sp">11px / 8.5pt</td><td class="sp">600</td><td class="sp">14px</td><td class="sp">等宽</td><td style="font-size:12px;color:var(--n-600)">仅徽章与版本号，禁止用于句子</td></tr>
+      </tbody>
+    </table>
+
+    <div class="grid2" style="margin-top:var(--sp-6)">
+      <div class="demo">
+        <div class="dt"><span class="mono">--sp-*</span> 间距序列（4px 基线，不允许 5/10/14/18）</div>
+        <div class="sp-row"><span class="lb">sp-1 · 2</span><span class="bar" style="width:2px"></span></div>
+        <div class="sp-row"><span class="lb">sp-2 · 4</span><span class="bar" style="width:4px"></span></div>
+        <div class="sp-row"><span class="lb">sp-3 · 6</span><span class="bar" style="width:6px"></span></div>
+        <div class="sp-row"><span class="lb">sp-4 · 8</span><span class="bar" style="width:8px"></span></div>
+        <div class="sp-row"><span class="lb">sp-5 · 12</span><span class="bar" style="width:12px"></span></div>
+        <div class="sp-row"><span class="lb">sp-6 · 16</span><span class="bar" style="width:16px"></span></div>
+        <div class="sp-row"><span class="lb">sp-7 · 20</span><span class="bar" style="width:20px"></span></div>
+        <div class="sp-row"><span class="lb">sp-8 · 24</span><span class="bar" style="width:24px"></span></div>
+        <div class="sp-row"><span class="lb">sp-9 · 32</span><span class="bar" style="width:32px"></span></div>
+        <div class="sp-row" style="padding-bottom:0"><span class="lb">sp-10 · 40</span><span class="bar" style="width:40px"></span></div>
+      </div>
+      <div class="demo">
+        <div class="dt"><span class="mono">--r-*</span> 圆角三档（禁止 8/10px）</div>
+        <div class="radii">
+          <div class="rad" style="border-radius:var(--r-1)"><div class="nm">r-1 · 2px</div><div class="ds">输入 / 徽章 / 表格</div></div>
+          <div class="rad" style="border-radius:var(--r-2)"><div class="nm">r-2 · 4px</div><div class="ds">按钮 / 卡 / 组框</div></div>
+          <div class="rad" style="border-radius:var(--r-3)"><div class="nm">r-3 · 6px</div><div class="ds">对话框 / 浮层</div></div>
+        </div>
+        <div class="dt" style="margin-top:var(--sp-5)"><span class="mono">--h-*</span> 控件高度只有三档</div>
+        <div class="row">
+          <span class="btn sm">sm · 28</span>
+          <span class="btn">md · 32</span>
+          <span class="btn lg">lg · 36</span>
+        </div>
+        <p style="margin-top:var(--sp-4);font-size:var(--fs-12);line-height:18px;color:var(--n-600)">
+          QSS 算式：<b style="font-family:var(--font-num);color:var(--n-800)">min-height = 目标高度 - 2 × 描边宽</b>。目标 32px、描边 1px → 写 30px。
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 04 新外壳 ================= -->
+  <section>
+    <div class="sec-head"><span class="sec-num">04</span><h2>新外壳</h2><span class="sec-note">9 个页签 · 1024px 下不出现滚动箭头</span></div>
+
+    <div class="cmp-label"><b>现状（违规示范）</b><span class="tag">Fusion 灰方块 · emoji 混入 · 「试验记…」被截断 · 右侧滚动箭头</span></div>
+    <div class="cmp-body">
+      <div class="legacy">
+        <div class="t on">数据可视化处理</div>
+        <div class="t">数据真值复核</div>
+        <div class="t">干涉仪测向仿真</div>
+        <div class="t">测向校正自动化</div>
+        <div class="t">📡 阵列设计助手</div>
+        <div class="t">🧮 指标计算器</div>
+        <div class="t">格式转换</div>
+        <div class="t cut">📋 试验记录助手</div>
+        <div class="arr">‹</div>
+        <div class="arr">›</div>
+      </div>
+    </div>
+
+    <div class="cmp-label" style="margin-top:var(--sp-5)"><b>V2</b><span class="tag ok">纯文字 · 2px 下划线激活 · 间距 0 · 总宽 911px</span></div>
+    <div class="cmp-body">
+      <div class="frame" style="border-radius:0;border:none;box-shadow:none">
+        <div class="tabbar">
+          <div class="tab on">数据可视化处理</div>
+          <div class="tab">数据真值复核</div>
+          <div class="tab">干涉仪测向仿真</div>
+          <div class="tab">测向校正自动化</div>
+          <div class="tab">阵列设计助手</div>
+          <div class="tab">指标计算器</div>
+          <div class="tab">格式转换</div>
+          <div class="tab">试验记录助手</div>
+          <div class="tab">坐标系账本</div>
+          <div class="tabbar-note">53 汉字 × 13px + 9 × 28px ≈ 911px</div>
+        </div>
+        <div style="height:34px;background:var(--n-0)"></div>
+        <div class="statusbar">
+          <span>已加载 3 组数据集 · 128 通道</span>
+          <div class="right">
+            <span>任务 2</span>
+            <span class="prog"><i></i></span>
+            <span style="color:var(--n-600)">v1.1.1</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="prose" style="margin-top:var(--sp-4)">
+      为什么用下划线而不是 pill：pill 需要左右各 16px 内边距 + 4px 间距，9 个页签约 1009px，超过 1024px 可用的约 985px，必然出滚动箭头；
+      下划线式只需左右 14px、间距 0，压到 911px。而且 pill 的填充激活态会和页内唯一的 primary 实心按钮抢焦点，下划线只占 2px 高度。
+    </p>
+  </section>
+
+  <!-- ================= 05 工作页 ================= -->
+  <section>
+    <div class="sec-head"><span class="sec-num">05</span><h2>工作页示意</h2><span class="sec-note">左导航 + 页头 + KPI 行 + 表单 / 结果双栏</span></div>
+
+    <div class="frame">
+      <!-- 页签栏 -->
+      <div class="tabbar">
+        <div class="tab">数据可视化处理</div>
+        <div class="tab">数据真值复核</div>
+        <div class="tab">干涉仪测向仿真</div>
+        <div class="tab">测向校正自动化</div>
+        <div class="tab">阵列设计助手</div>
+        <div class="tab on">指标计算器</div>
+        <div class="tab">格式转换</div>
+        <div class="tab">试验记录助手</div>
+        <div class="tab">坐标系账本</div>
+      </div>
+
+      <div class="work">
+        <!-- 左导航 -->
+        <aside class="nav">
+          <div class="grp">计算器分类</div>
+          <div class="it"><span class="dot"></span>单位转换</div>
+          <div class="it on"><span class="dot"></span>链路预算</div>
+          <div class="it"><span class="dot"></span>天线增益估算</div>
+          <div class="it"><span class="dot"></span>测向精度估算</div>
+          <div class="it"><span class="dot"></span>阵列参数计算</div>
+          <div class="grp">最近使用</div>
+          <div class="it"><span class="dot"></span>阵列参数计算</div>
+          <div class="it"><span class="dot"></span>单位转换</div>
+        </aside>
+
+        <div class="main">
+          <!-- 页头 -->
+          <div class="page-header">
+            <h3>链路预算</h3>
+            <span class="sub-t">自由空间雷达方程 · 已启用相参积累修正</span>
+            <div class="acts">
+              <button class="btn ghost">重置</button>
+              <button class="btn">导出</button>
+              <button class="btn primary">计算</button>
+            </div>
+          </div>
+
+          <div class="body">
+            <!-- KPI 行 -->
+            <div class="kpis">
+              <div class="kpi">
+                <div class="acc primary"></div>
+                <div class="in">
+                  <div class="lb">作用距离</div>
+                  <div class="vl"><span class="n">42.7</span><span class="u">km</span></div>
+                </div>
+              </div>
+              <div class="kpi">
+                <div class="acc neutral"></div>
+                <div class="in">
+                  <div class="lb">天线增益</div>
+                  <div class="vl"><span class="n">32.4</span><span class="u">dBi</span></div>
+                </div>
+              </div>
+              <div class="kpi">
+                <div class="acc neutral"></div>
+                <div class="in">
+                  <div class="lb">波长</div>
+                  <div class="vl"><span class="n">29.98</span><span class="u">mm</span></div>
+                </div>
+              </div>
+              <div class="kpi">
+                <div class="acc neutral"></div>
+                <div class="in">
+                  <div class="lb">EIRP</div>
+                  <div class="vl"><span class="n">52.4</span><span class="u">dBW</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="cols">
+              <!-- 表单卡 -->
+              <div class="gbox">
+                <div class="ttl">输入参数</div>
+                <div class="bd">
+                  <div class="field"><label>工作频率</label><div class="ipt">10.0<span class="trail">GHz</span></div></div>
+                  <div class="field"><label>天线口径</label><div class="ipt focus">0.505<span class="trail">m</span></div></div>
+                  <div class="field"><label>口径效率</label><div class="ipt">0.62<span class="trail">—</span></div></div>
+                  <div class="field"><label>发射功率</label><div class="ipt">100.0<span class="trail">W</span></div></div>
+                  <div class="field"><label>目标 RCS</label><div class="ipt">1.0<span class="trail">m²</span></div></div>
+                  <div class="field"><label>接收灵敏度</label><div class="ipt err">-133.9<span class="trail">dBm</span></div></div>
+                  <div class="field"><label>门限信噪比</label><div class="ipt">13.0<span class="trail">dB</span></div></div>
+                  <div class="hintline">输入框宽度上限 220px；带单位的数值用 spinbox 的 suffix，不在旁边挂 QLabel。</div>
+                </div>
+              </div>
+
+              <!-- 结果卡 -->
+              <div class="rcard">
+                <div class="rhead">
+                  <span class="lb">主结果 · 作用距离</span>
+                  <span class="badge success">达标</span>
+                  <span class="badge">自由空间模型</span>
+                  <span class="sp"></span>
+                  <button class="btn ghost sm">复制</button>
+                </div>
+
+                <div class="rvalue">
+                  <span class="n">42.7</span><span class="u">km</span>
+                </div>
+
+                <div class="ptab">
+                  <div class="prow"><div class="k">发射功率</div><div class="v"><span class="seg">100.0 <em>W</em></span><span class="seg">20.00 <em>dBW</em></span></div></div>
+                  <div class="prow"><div class="k">天线增益</div><div class="v"><span class="seg">32.4 <em>dBi</em></span><span class="seg">口径 0.505 <em>m</em> / η 0.62</span></div></div>
+                  <div class="prow"><div class="k">工作波长</div><div class="v">29.98 <em>mm</em></div></div>
+                  <div class="prow"><div class="k">目标 RCS</div><div class="v">1.00 <em>m²</em></div></div>
+                  <div class="prow"><div class="k">接收灵敏度</div><div class="v">-133.9 <em>dBm</em></div></div>
+                  <div class="prow"><div class="k">门限信噪比</div><div class="v">13.0 <em>dB</em></div></div>
+                </div>
+
+                <div class="hint">
+                  <span class="mk">i</span>
+                  <span>作用距离按自由空间雷达方程计算，未计入大气衰减与地形遮挡；灵敏度 -133.9 dBm 已含 4000 点相参积累增益 36 dB（单脉冲门限 -97.9 dBm）。</span>
+                </div>
+
+                <div class="tblwrap">
+                  <table class="data">
+                    <thead>
+                      <tr><th>参数</th><th>频率 (GHz)</th><th style="text-align:right">增益 (dBi)</th><th style="text-align:right">距离 (km)</th><th class="ctr">状态</th></tr>
+                    </thead>
+                    <tbody>
+                      <tr><td>基准组</td><td>10.0</td><td class="num">32.4</td><td class="num">42.7</td><td class="ctr"><span class="badge success">达标</span></td></tr>
+                      <tr><td>灵敏度 -3 dB</td><td>10.0</td><td class="num">32.4</td><td class="num">35.9</td><td class="ctr"><span class="badge warning">边界</span></td></tr>
+                      <tr class="sel"><td>灵敏度 -6 dB</td><td>10.0</td><td class="num">32.4</td><td class="num">30.2</td><td class="ctr"><span class="badge danger">不达标</span></td></tr>
+                      <tr><td>频率上偏 5%</td><td>10.5</td><td class="num">32.8</td><td class="num">41.1</td><td class="ctr"><span class="badge success">达标</span></td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p style="margin-top:var(--sp-3);font-size:var(--fs-12);color:var(--n-600)">
+                  数值列右对齐 + 等宽族；单位只在表头出现，单元格内只放数字。
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="statusbar">
+        <span>链路预算计算完成 · 耗时 12 ms</span>
+        <div class="right">
+          <span>任务 0</span>
+          <span style="color:var(--n-600)">v1.1.1</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 06 组件 ================= -->
+  <section>
+    <div class="sec-head"><span class="sec-num">06</span><h2>组件样本</h2><span class="sec-note">每个状态都能翻译成一行 QSS</span></div>
+
+    <div class="grid2">
+      <!-- 按钮 -->
+      <div class="demo">
+        <div class="dt"><span class="mono">QPushButton</span> 四变体 · 默认 / 禁用</div>
+        <div class="row" style="margin-bottom:var(--sp-4)">
+          <span class="btn primary"><span class="i16 plus"></span>计算</span>
+          <span class="btn">导出</span>
+          <span class="btn ghost">重置</span>
+          <span class="btn danger">删除</span>
+        </div>
+        <div class="row">
+          <span class="btn primary" disabled>计算</span>
+          <span class="btn" disabled>导出</span>
+          <span class="btn ghost" disabled>重置</span>
+          <span class="btn danger" disabled>删除</span>
+        </div>
+        <div class="row" style="margin-top:var(--sp-4);padding-top:var(--sp-4);border-top:1px solid var(--n-200)">
+          <span class="btn sm">sm 28</span>
+          <span class="btn">md 32</span>
+          <span class="btn lg">lg 36</span>
+          <span class="badge">图标 14px</span>
+        </div>
+        <p style="margin-top:var(--sp-4);font-size:var(--fs-12);line-height:18px;color:var(--n-600)">
+          一屏只允许 1 个 primary。破坏性操作走「危险描边」，不用整块红色填充。
+        </p>
+      </div>
+
+      <!-- 输入 -->
+      <div class="demo">
+        <div class="dt"><span class="mono">QLineEdit / QSpinBox</span> 五种状态</div>
+        <div style="display:grid;gap:var(--sp-3)">
+          <div style="display:grid;grid-template-columns:76px 1fr;gap:var(--sp-3);align-items:center">
+            <label style="font-size:var(--fs-12);font-weight:600;color:var(--n-600);text-align:right">默认</label>
+            <div class="ipt">0.505<span class="trail">m</span></div>
+          </div>
+          <div style="display:grid;grid-template-columns:76px 1fr;gap:var(--sp-3);align-items:center">
+            <label style="font-size:var(--fs-12);font-weight:600;color:var(--n-600);text-align:right">聚焦</label>
+            <div class="ipt focus">0.505<span class="trail">m</span></div>
+          </div>
+          <div style="display:grid;grid-template-columns:76px 1fr;gap:var(--sp-3);align-items:center">
+            <label style="font-size:var(--fs-12);font-weight:600;color:var(--n-600);text-align:right">错误</label>
+            <div class="ipt err">-133.9<span class="trail">dBm</span></div>
+          </div>
+          <div style="display:grid;grid-template-columns:76px 1fr;gap:var(--sp-3);align-items:center">
+            <label style="font-size:var(--fs-12);font-weight:600;color:var(--n-600);text-align:right">禁用</label>
+            <div class="ipt dis">0.505<span class="trail">m</span></div>
+          </div>
+          <div style="display:grid;grid-template-columns:76px 1fr;gap:var(--sp-3);align-items:center">
+            <label style="font-size:var(--fs-12);font-weight:600;color:var(--n-600);text-align:right">占位</label>
+            <div class="ipt ph">请输入口径<span class="trail"></span></div>
+          </div>
+        </div>
+        <p style="margin-top:var(--sp-4);font-size:var(--fs-12);line-height:18px;color:var(--n-600)">
+          聚焦只换描边颜色（1.41:1 → 5.9:1 的对比跃升已足够可辨），<b>不改描边宽度</b>，避免整行抖动。
+        </p>
+      </div>
+
+      <!-- 状态类 -->
+      <div class="demo">
+        <div class="dt"><span class="mono">空态 / 错误态 / 提示行变体 / KPI 空值</span></div>
+        <div class="empty">
+          <div class="ic"></div>
+          <div class="t">尚未载入标定数据</div>
+          <div class="h">点击左侧「浏览」选择 Excel / CSV 文件</div>
+        </div>
+        <div class="errbar" style="margin-top:var(--sp-4)">
+          <span>行列数不匹配：期望 64 行，实际 61 行（缺失第 12-14 通道）</span>
+        </div>
+        <div class="hint" style="background:var(--warning-bg);border-left-color:var(--warning);margin-top:var(--sp-2)">
+          <span class="mk" style="color:var(--warning-text)">!</span>
+          <span style="color:var(--warning-text)">口径效率取 0.65 为工程经验值，实测偏差 &gt;5% 时请以实测值替换。</span>
+        </div>
+        <div class="row" style="margin-top:var(--sp-4)">
+          <div class="kpi" style="flex:1 1 132px;min-height:64px">
+            <div class="acc neutral"></div>
+            <div class="in" style="padding:10px var(--sp-4)">
+              <div class="lb">有效行</div>
+              <div class="vl"><span class="n none" style="font-size:var(--fs-26);line-height:30px">--</span><span class="u">行</span></div>
+            </div>
+          </div>
+          <div class="kpi" style="flex:1 1 132px;min-height:64px">
+            <div class="acc neutral"></div>
+            <div class="in" style="padding:10px var(--sp-4)">
+              <div class="lb">帧数</div>
+              <div class="vl"><span class="n none" style="font-size:var(--fs-26);line-height:30px">--</span><span class="u">帧</span></div>
+            </div>
+          </div>
+        </div>
+        <p style="margin-top:var(--sp-4);font-size:var(--fs-12);line-height:18px;color:var(--n-600)">
+          空态与有值态同高，只换数值位；空态文案必须给出下一步动作。
+        </p>
+      </div>
+
+      <!-- 表格说明 -->
+      <div class="demo">
+        <div class="dt"><span class="mono">QTableWidget</span> 行高 26 · 表头 30 · 斑马纹 · 选中</div>
+        <div class="tblwrap" style="margin-top:0">
+          <table class="data">
+            <thead><tr><th>通道</th><th style="text-align:right">幅度 (dB)</th><th style="text-align:right">相位 (°)</th><th class="ctr">校验</th></tr></thead>
+            <tbody>
+              <tr><td>CH01</td><td class="num">-12.4</td><td class="num">128.35</td><td class="ctr"><span class="badge success">通过</span></td></tr>
+              <tr><td>CH02</td><td class="num">-11.9</td><td class="num">127.02</td><td class="ctr"><span class="badge success">通过</span></td></tr>
+              <tr class="sel"><td>CH03</td><td class="num">-13.7</td><td class="num">125.88</td><td class="ctr"><span class="badge warning">偏差</span></td></tr>
+              <tr><td>CH04</td><td class="num">-12.1</td><td class="num">129.44</td><td class="ctr"><span class="badge success">通过</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p style="margin-top:var(--sp-3);font-size:var(--fs-12);line-height:18px;color:var(--n-600)">
+          无竖网格线，仅横向 1px 发丝；选中态 <span style="font-family:var(--font-num)">#E4EEF6</span>，无边框无发光。
+        </p>
+        <div class="ptab" style="margin-top:var(--sp-4)">
+          <div class="prow"><div class="k">行高 / 表头高</div><div class="v"><span class="seg">26 <em>px</em></span><span class="seg">30 <em>px</em></span></div></div>
+          <div class="prow"><div class="k">单元格内边距</div><div class="v">0 10 <em>px</em></div></div>
+          <div class="prow"><div class="k">数值列</div><div class="v"><span class="seg">右对齐 + 等宽</span><span class="seg"><em>16.4</em></span></div></div>
+          <div class="prow" style="border-bottom:none"><div class="k">单位</div><div class="v"><span class="seg">只在表头</span><span class="seg"><em>幅度 (dB)</em></span></div></div>
+        </div>
+      </div>
+
+      <!-- 徽章 -->
+      <div class="demo">
+        <div class="dt"><span class="mono">QLabel#badge</span> 五种语义 · 高 20px</div>
+        <div class="row" style="margin-bottom:var(--sp-4)">
+          <span class="badge">中性</span>
+          <span class="badge primary">当前</span>
+          <span class="badge success">达标</span>
+          <span class="badge warning">边界</span>
+          <span class="badge danger">超差</span>
+        </div>
+        <div class="row" style="margin-bottom:var(--sp-4)">
+          <span class="badge">128 通道</span>
+          <span class="badge">16 帧</span>
+          <span class="badge">BIN 270 B</span>
+          <span class="badge warning">未校准</span>
+        </div>
+        <div class="ptab" style="margin-top:0">
+          <div class="prow"><div class="k">高度 / 内边距</div><div class="v"><span class="seg">20 <em>px</em></span><span class="seg">0 6 <em>px</em></span></div></div>
+          <div class="prow" style="border-bottom:none"><div class="k">字号 / 圆角</div><div class="v"><span class="seg">11 <em>px</em> 600</span><span class="seg">2 <em>px</em></span></div></div>
+        </div>
+        <p style="margin-top:var(--sp-4);font-size:var(--fs-12);line-height:18px;color:var(--n-600)">
+          徽章只承载状态与计数，不放动词、不放图标；一张卡内最多 1 组语义色。
+        </p>
+      </div>
+
+      <!-- 滚动条 -->
+      <div class="demo">
+        <div class="dt"><span class="mono">QScrollBar</span> 宽 10px · 无箭头 · 无轨道底</div>
+        <div class="row" style="gap:var(--sp-6);align-items:flex-start">
+          <div class="scroll-track"><i></i></div>
+          <div class="scroll-track"><i style="background:var(--n-400);top:20px;height:60px"></i></div>
+          <div style="font-size:var(--fs-12);line-height:18px;color:var(--n-600)">
+            默认 handle <span style="font-family:var(--font-num);color:var(--n-800)">--n-300</span><br>
+            悬停 handle <span style="font-family:var(--font-num);color:var(--n-800)">--n-400</span><br>
+            圆角 5px，最小长 32px<br>
+            <span style="color:var(--n-500)">add-line / sub-line 高度归零</span>
+          </div>
+        </div>
+        <p style="margin-top:var(--sp-4);font-size:var(--fs-12);line-height:18px;color:var(--n-600)">
+          轨道透明、无箭头按钮——Fusion 默认滚动条会在深色图区旁露出浅灰轨道，破坏凹陷感。
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 07 禁止清单 ================= -->
+  <section>
+    <div class="sec-head"><span class="sec-num">07</span><h2>禁止清单</h2><span class="sec-note">出现任意一条视为视觉回归</span></div>
+    <div class="bans">
+      <div class="ban"><span class="x">×</span><div class="txt"><b>内联魔法色</b><br><i>任何 .py 里写 #RRGGBB 字面值（游戏页豁免），只能引用令牌。</i></div></div>
+      <div class="ban"><span class="x">×</span><div class="txt"><b>渐变按钮</b><br><i>qlineargradient 全部删除，含 PRIMARY_BUTTON_STYLE / CALC_BUTTON_STYLE。</i></div></div>
+      <div class="ban"><span class="x">×</span><div class="txt"><b>2px 描边强调块</b><br><i>描边只有 1px；仅页签下划线、强调条、图表 ±0 线可用 2px。</i></div></div>
+      <div class="ban"><span class="x">×</span><div class="txt"><b>emoji 当功能图标</b><br><i>页签、按钮、KPI、表头、状态栏一律禁止 emoji。</i></div></div>
+      <div class="ban"><span class="x">×</span><div class="txt"><b>随意控件高度</b><br><i>只允许 28 / 32 / 36；44px 巨型按钮不再出现。</i></div></div>
+      <div class="ban"><span class="x">×</span><div class="txt"><b>超过 6px 的圆角</b><br><i>8px / 10px 圆角全部改为 2 / 4 / 6。</i></div></div>
+      <div class="ban"><span class="x">×</span><div class="txt"><b>绿色主按钮</b><br><i>#4CAF50 加载数据、#22c55e 执行，主操作一律 primary。</i></div></div>
+      <div class="ban"><span class="x">×</span><div class="txt"><b>控件拉满整行</b><br><i>输入类控件 > 320px 即缺陷（路径输入除外）。</i></div></div>
+      <div class="ban"><span class="x">×</span><div class="txt"><b>同页两套视觉</b><br><i>一个页面出现两种按钮形态 / 两种表头 / 两种字号体系。</i></div></div>
+      <div class="ban"><span class="x">×</span><div class="txt"><b>状态双写</b><br><i>同一条消息同时出现在页内文本区与状态栏。</i></div></div>
+      <div class="ban"><span class="x">×</span><div class="txt"><b>空态 = 空卡</b><br><i>无值 KPI 显示「--」并给下一步提示，不留三倍大的空盒子。</i></div></div>
+      <div class="ban"><span class="x">×</span><div class="txt"><b>整卡铺色</b><br><i>语义色填充只允许按钮与徽章，不允许整块背景。</i></div></div>
+    </div>
+  </section>
+
+  <div class="foot">
+    <span>配套文档：<b style="color:var(--n-700)">UI视觉规范V2.md</b>（令牌表 / 组件 QSS / 迁移映射表）</span>
+    <span class="r">UI Design Language V2 · Radar Toolbox</span>
+  </div>
+
+</div>
+</body>
+</html>

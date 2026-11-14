@@ -18,6 +18,7 @@ from PyQt5.QtWidgets import (
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
+from .ui_theme import CHART_COLORS  # V2 §3.4 图表色板
 from .alignment import (
     apply_time_mapping, calculate_error_metrics, estimate_time_mapping,
     interpolate_at,
@@ -177,8 +178,8 @@ class ComparePlotMixin:
             truth_plot_sample, truth_values = _decimate_plot_arrays(
                 truth_sample, item['raw_truth']
             )
-            ax.plot(radar_plot_sample, radar_values, color='#2563eb', linewidth=1.2, label='雷达原始')
-            ax.plot(truth_plot_sample, truth_values, color='#dc2626', linewidth=1.1, linestyle='--', label='真值原始')
+            ax.plot(radar_plot_sample, radar_values, color=CHART_COLORS[0], linewidth=1.2, label='雷达原始')
+            ax.plot(truth_plot_sample, truth_values, color=CHART_COLORS[3], linewidth=1.1, linestyle='--', label='真值原始')
             ax.set_title(config['label'], fontsize=10, fontweight='bold')
             ax.set_xlabel('样点位置（GPS 由时间列 / 雷达周期换算）')
             ax.set_ylabel(config['unit'])
@@ -211,11 +212,11 @@ class ComparePlotMixin:
                 selected_indices, current_values
             )
             axis.plot(
-                original_x, original_y, color='#94a3b8', linewidth=1.0,
+                original_x, original_y, color=CHART_COLORS[7], linewidth=1.0,
                 label='截取前（雷达原始）',
             )
             axis.plot(
-                current_x, current_y, color='#2563eb', linewidth=1.35,
+                current_x, current_y, color=CHART_COLORS[0], linewidth=1.35,
                 label='截取/过滤后',
             )
             axis.set_title(config['label'], fontsize=10, fontweight='bold')
@@ -243,11 +244,11 @@ class ComparePlotMixin:
                 gps_interpolated_sample, item['gps_interpolated']
             )
             axis.plot(
-                raw_x, raw_truth, color='#94a3b8', linewidth=1.0,
+                raw_x, raw_truth, color=CHART_COLORS[7], linewidth=1.0,
                 label='GPS 原始点（按真实时间定位）',
             )
             axis.plot(
-                interpolated_x, interpolated_truth, color='#dc2626', linewidth=1.25,
+                interpolated_x, interpolated_truth, color=CHART_COLORS[3], linewidth=1.25,
                 linestyle='--', label='GPS 时间插值后（雷达采样周期）',
             )
             axis.set_title(config['label'], fontsize=10, fontweight='bold')
@@ -267,16 +268,16 @@ class ComparePlotMixin:
         for index, item in enumerate(results.values(), 1):
             axis = figure.add_subplot(rows, columns, index)
             plot_sample, error = _decimate_plot_arrays(sample_axis, item['error'])
-            axis.plot(plot_sample, error, color='#0f766e', linewidth=1.15)
+            axis.plot(plot_sample, error, color=CHART_COLORS[2], linewidth=1.15)
             finite = np.asarray(item['error'])[np.isfinite(item['error'])]
             if len(finite):
                 mean_error = float(np.mean(finite))
                 axis.axhline(
-                    mean_error, color='#dc2626', linewidth=1.0,
+                    mean_error, color=CHART_COLORS[3], linewidth=1.0,
                     linestyle='--', label=f'平均差值 {mean_error:.6g}',
                 )
                 style_axes_legend(axis)
-            axis.axhline(0.0, color='#94a3b8', linewidth=0.8)
+            axis.axhline(0.0, color=CHART_COLORS[7], linewidth=0.8)
             axis.set_title(f"{item['config']['label']} - {title}", fontsize=10,
                            fontweight='bold')
             axis.set_xlabel('雷达样点索引')
@@ -297,24 +298,24 @@ class ComparePlotMixin:
                 plot_sample, radar, truth = _decimate_plot_arrays(
                     sample_axis, item['radar'], item['truth']
                 )
-                ax.plot(plot_sample, radar, color='#2563eb', linewidth=1.4, label='雷达数据')
+                ax.plot(plot_sample, radar, color=CHART_COLORS[0], linewidth=1.4, label='雷达数据')
                 ax.plot(
-                    plot_sample, truth, color='#dc2626', linewidth=1.2,
+                    plot_sample, truth, color=CHART_COLORS[3], linewidth=1.2,
                     linestyle='--', label='对齐后 GPS 真值',
                 )
                 ax.set_ylabel(config['unit'])
                 style_axes_legend(ax)
             elif mode == 'error':
                 plot_sample, error = _decimate_plot_arrays(sample_axis, item['error'])
-                ax.plot(plot_sample, error, color='#0f766e', linewidth=1.2)
-                ax.axhline(0.0, color='#94a3b8', linewidth=0.8)
+                ax.plot(plot_sample, error, color=CHART_COLORS[2], linewidth=1.2)
+                ax.axhline(0.0, color=CHART_COLORS[7], linewidth=0.8)
                 ax.set_ylabel(f"误差 ({config['unit']})")
             else:
                 error = item['error'][np.isfinite(item['error'])]
                 error, = _decimate_plot_arrays(error)
                 bins = min(50, max(10, int(np.sqrt(len(error)))))
-                ax.hist(error, bins=bins, color='#2563eb', alpha=0.78, edgecolor='white')
-                ax.axvline(0.0, color='#dc2626', linewidth=1.0)
+                ax.hist(error, bins=bins, color=CHART_COLORS[0], alpha=0.78, edgecolor='white')
+                ax.axvline(0.0, color=CHART_COLORS[3], linewidth=1.0)
                 ax.set_xlabel(f"误差 ({config['unit']})")
                 ax.set_ylabel('样点数')
             ax.set_title(config['label'], fontsize=10, fontweight='bold')
@@ -342,13 +343,13 @@ class ComparePlotMixin:
             gt_xyz = _decimate_plot_arrays(*gt_xyz)
             if elevation:
                 ax = figure.add_subplot(111, projection='3d')
-                ax.plot(*rd_xyz, color='#2563eb', linewidth=1.3, label='雷达轨迹')
-                ax.plot(*gt_xyz, color='#dc2626', linewidth=1.2, linestyle='--', label='真值轨迹')
+                ax.plot(*rd_xyz, color=CHART_COLORS[0], linewidth=1.3, label='雷达轨迹')
+                ax.plot(*gt_xyz, color=CHART_COLORS[3], linewidth=1.2, linestyle='--', label='真值轨迹')
                 ax.set_zlabel('Z (m)')
             else:
                 ax = figure.add_subplot(111)
-                ax.plot(rd_xyz[0], rd_xyz[1], color='#2563eb', linewidth=1.3, label='雷达轨迹')
-                ax.plot(gt_xyz[0], gt_xyz[1], color='#dc2626', linewidth=1.2, linestyle='--', label='真值轨迹')
+                ax.plot(rd_xyz[0], rd_xyz[1], color=CHART_COLORS[0], linewidth=1.3, label='雷达轨迹')
+                ax.plot(gt_xyz[0], gt_xyz[1], color=CHART_COLORS[3], linewidth=1.2, linestyle='--', label='真值轨迹')
                 ax.set_aspect('equal', adjustable='datalim')
             ax.set_xlabel('X (m)')
             ax.set_ylabel('Y (m)')
@@ -364,8 +365,8 @@ class ComparePlotMixin:
         labels = [item['method'] for item in candidates]
         x = np.arange(len(labels))
         width = 0.36
-        ax.bar(x - width / 2, [item['rmse'] for item in candidates], width, label='RMSE', color='#2563eb')
-        ax.bar(x + width / 2, [item['mae'] for item in candidates], width, label='MAE', color='#0f766e')
+        ax.bar(x - width / 2, [item['rmse'] for item in candidates], width, label='RMSE', color=CHART_COLORS[0])
+        ax.bar(x + width / 2, [item['mae'] for item in candidates], width, label='MAE', color=CHART_COLORS[2])
         ax.set_xticks(x)
         ax.set_xticklabels(labels)
         ax.set_ylabel(METRIC_BY_KEY[self.combo_cmp_reference.currentData()]['unit'])

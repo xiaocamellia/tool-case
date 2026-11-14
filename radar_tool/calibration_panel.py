@@ -26,6 +26,7 @@ from PyQt5.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QScrollArea,
     QSpinBox,
@@ -62,9 +63,32 @@ from .export_safety import (
     write_dataframe_csv,
 )
 from .logger import get_logger
-from .ui_theme import style_primary_button, style_warning_button
+from .ui_theme import (
+    CHART_COLORS, TOKENS, set_prop, set_variant, style_primary_button,
+    style_warning_button,
+)
+from .ui_result_card import KpiCard
+from .fmt import count, delta, num, num_fixed
 
 logger = get_logger('calibration_panel')
+
+
+class _KpiValueProxy:
+    """让既有 ``lbl_*.setText(...)`` 调用点直接驱动 KPI 卡（保持属性名与调用不变）。"""
+
+    def __init__(self, card):
+        self._card = card
+
+    def setText(self, text):  # noqa: N802 - 兼容 QLabel 接口
+        value = str(text)
+        self._card.set_value(None if value in ('', '--') else value)
+
+    def text(self):
+        return self._card.value.text()
+
+    @property
+    def card(self):
+        return self._card
 
 
 class CalibrationWorker(QObject):
@@ -143,7 +167,7 @@ class CalibrationPanel(QWidget):
         logger.info('测向校正自动化面板已创建')
 
     @staticmethod
-    def _make_double_spin(value, minimum=-1e9, maximum=1e9, decimals=6):
+    def _make_double_spin(value, minimum=-1e9, maximum=1e9, decimals=3):
         control = QDoubleSpinBox()
         control.setRange(minimum, maximum)
         control.setDecimals(decimals)
@@ -158,7 +182,7 @@ class CalibrationPanel(QWidget):
 
         toolbar = QHBoxLayout()
         title = QLabel('测向校正自动化')
-        title.setStyleSheet('font-size: 18px; font-weight: bold; color: #172033;')
+        title.setObjectName('pageTitle')
         toolbar.addWidget(title)
         toolbar.addStretch()
 
@@ -244,17 +268,23 @@ class CalibrationPanel(QWidget):
         data_layout.addWidget(self.btn_browse, 0, 1)
         self.lbl_data_status = QLabel('未加载数据')
         self.lbl_data_status.setWordWrap(True)
-        self.lbl_data_status.setStyleSheet('color: #64748b;')
+        set_prop(self.lbl_data_status, 'tone', 'muted')
         data_layout.addWidget(self.lbl_data_status, 1, 0, 1, 2)
         layout.addWidget(data_group)
 
         fixed_group = QGroupBox('固定参数（当前批次）')
         fixed_layout = QGridLayout(fixed_group)
-        self.spin_rho = self._make_double_spin(DEFAULT_FIXED_PARAMS['rho_obj'], 0.001)
-        self.spin_xx = self._make_double_spin(DEFAULT_FIXED_PARAMS['xx_r4'])
-        self.spin_bs14 = self._make_double_spin(DEFAULT_FIXED_PARAMS['BS14'])
-        self.spin_bs24 = self._make_double_spin(DEFAULT_FIXED_PARAMS['BS24'])
-        self.spin_bs34 = self._make_double_spin(DEFAULT_FIXED_PARAMS['BS34'])
+        # §2.2：坐标类 3 位小数、基线类 1 位小数
+        self.spin_rho = self._make_double_spin(
+            DEFAULT_FIXED_PARAMS['rho_obj'], 0.001, decimals=3)
+        self.spin_xx = self._make_double_spin(
+            DEFAULT_FIXED_PARAMS['xx_r4'], decimals=3)
+        self.spin_bs14 = self._make_double_spin(
+            DEFAULT_FIXED_PARAMS['BS14'], decimals=1)
+        self.spin_bs24 = self._make_double_spin(
+            DEFAULT_FIXED_PARAMS['BS24'], decimals=1)
+        self.spin_bs34 = self._make_double_spin(
+            DEFAULT_FIXED_PARAMS['BS34'], decimals=1)
         fixed_layout.addWidget(QLabel('rho_obj (mm):'), 0, 0)
         fixed_layout.addWidget(self.spin_rho, 0, 1)
         fixed_layout.addWidget(QLabel('xx_r4 (mm):'), 1, 0)
@@ -278,8 +308,10 @@ class CalibrationPanel(QWidget):
 
         init_group = QGroupBox('优化设置')
         init_layout = QGridLayout(init_group)
-        self.spin_yy = self._make_double_spin(DEFAULT_INIT_PARAMS['yy_r4_ZT'])
-        self.spin_zz = self._make_double_spin(DEFAULT_INIT_PARAMS['zz_r4_ZT'])
+        self.spin_yy = self._make_double_spin(
+            DEFAULT_INIT_PARAMS['yy_r4_ZT'], decimals=3)
+        self.spin_zz = self._make_double_spin(
+            DEFAULT_INIT_PARAMS['zz_r4_ZT'], decimals=3)
         self.spin_max_iterations = QSpinBox()
         self.spin_max_iterations.setRange(50, 100000)
         self.spin_max_iterations.setValue(1000)
@@ -309,9 +341,13 @@ class CalibrationPanel(QWidget):
         layout.setContentsMargins(8, 4, 4, 4)
 
         summary_layout = QHBoxLayout()
-        self.lbl_yy_result = self._create_summary_box(summary_layout, 'yy_r4_ZT', '--', '#2563eb')
-        self.lbl_zz_result = self._create_summary_box(summary_layout, 'zz_r4_ZT', '--', '#0f766e')
-        self.lbl_cost_result = self._create_summary_box(summary_layout, '成本下降', '--', '#b45309')
+        summary_layout.setSpacing(8)
+        self.lbl_yy_result = self._create_summary_box(
+            summary_layout, 'yy_r4_ZT', 'm', 'primary', tone='primary')
+        self.lbl_zz_result = self._create_summary_box(
+            summary_layout, 'zz_r4_ZT', 'm', 'primary', tone='neutral')
+        self.lbl_cost_result = self._create_summary_box(
+            summary_layout, '成本下降', '%', 'success', tone='success')
         layout.addLayout(summary_layout)
 
         self.result_tabs = QTabWidget()
@@ -329,8 +365,11 @@ class CalibrationPanel(QWidget):
         metric_layout = QVBoxLayout(metric_page)
         self.metrics_table = QTableWidget(8, 5)
         self.metrics_table.setHorizontalHeaderLabels(
-            ['角度', '指标', '优化前 (deg)', '优化后 (deg)', '变化'])
-        self.metrics_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+            ['角度', '指标', '优化前 (°)', '优化后 (°)', '变化 (°)'])
+        _mh = self.metrics_table.horizontalHeader()
+        _mh.setSectionResizeMode(QHeaderView.Interactive)
+        _mh.setMinimumSectionSize(64)
+        _mh.setStretchLastSection(True)
         self.metrics_table.verticalHeader().setVisible(False)
         self.metrics_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.metrics_table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -349,32 +388,29 @@ class CalibrationPanel(QWidget):
         self.result_tabs.addTab(preview_page, '数据预览')
         layout.addWidget(self.result_tabs, 1)
 
-        self.txt_result = QTextEdit()
+        self.txt_result = QPlainTextEdit()
         self.txt_result.setReadOnly(True)
         self.txt_result.setMaximumHeight(126)
+        self.txt_result.setMaximumBlockCount(2000)
         self.txt_result.setPlaceholderText('校正结果与运行状态')
         layout.addWidget(self.txt_result)
 
         self._draw_empty_plot()
         return container
 
-    @staticmethod
-    def _create_summary_box(parent_layout, title, value, accent):
-        frame = QFrame()
-        frame.setStyleSheet(
-            f'QFrame {{ background: #ffffff; border: 1px solid #d7dee9; '
-            f'border-left: 4px solid {accent}; border-radius: 6px; }}')
-        box = QVBoxLayout(frame)
-        box.setContentsMargins(12, 8, 12, 8)
-        title_label = QLabel(title)
-        title_label.setStyleSheet('color: #64748b; font-size: 9pt; border: none;')
-        value_label = QLabel(value)
-        value_label.setStyleSheet(
-            f'color: {accent}; font-size: 16pt; font-weight: 700; border: none;')
-        box.addWidget(title_label)
-        box.addWidget(value_label)
-        parent_layout.addWidget(frame, 1)
-        return value_label
+    def _create_summary_box(self, parent_layout, title, unit='', value='--',
+                            tone='neutral'):
+        """V2 §4.4 KPI 卡：3px 强调条 + 标签 + 等宽数值 + 独立单位。
+
+        返回一个 `.setText()` 代理，保持既有调用点（`lbl_*.setText(...)`）不变。
+        """
+        card = KpiCard(title, unit=unit, tone=tone, hint='运行校正后显示')
+        card.set_value(None)
+        parent_layout.addWidget(card, 1)
+        if not hasattr(self, '_kpi_cards'):
+            self._kpi_cards = []
+        self._kpi_cards.append(card)
+        return _KpiValueProxy(card)
 
     def _connect_dirty_signals(self):
         self.edit_profile_name.textChanged.connect(self._mark_profile_dirty)
@@ -452,7 +488,7 @@ class CalibrationPanel(QWidget):
         self._loading_profile = False
         self._profile_dirty = False
         self.lbl_profile_status.setText(f'已加载：{profile["name"]}')
-        self.lbl_profile_status.setStyleSheet('color: #0f766e;')
+        set_prop(self.lbl_profile_status, 'tone', 'success')
         self.btn_delete_profile.setEnabled(True)
 
     def _on_data_path_changed(self, filepath):
@@ -466,7 +502,7 @@ class CalibrationPanel(QWidget):
             self.lbl_data_status.setText('配置路径尚未加载')
         else:
             self.lbl_data_status.setText('未加载数据')
-        self.lbl_data_status.setStyleSheet('color: #64748b;')
+        set_prop(self.lbl_data_status, 'tone', 'muted')
 
     def _set_matrix(self, matrix):
         self.matrix_table.blockSignals(True)
@@ -482,7 +518,7 @@ class CalibrationPanel(QWidget):
             return
         self._profile_dirty = True
         self.lbl_profile_status.setText('参数已修改，尚未保存')
-        self.lbl_profile_status.setStyleSheet('color: #b45309;')
+        set_prop(self.lbl_profile_status, 'tone', 'warning')
 
     def _confirm_discard(self):
         if not self._profile_dirty:
@@ -518,7 +554,7 @@ class CalibrationPanel(QWidget):
         self._loading_profile = False
         self._profile_dirty = True
         self.lbl_profile_status.setText('新参数，保存后可在其他试验中复用')
-        self.lbl_profile_status.setStyleSheet('color: #2563eb;')
+        set_prop(self.lbl_profile_status, 'tone', 'primary')
         self.btn_delete_profile.setEnabled(False)
 
     def _collect_profile(self):
@@ -570,7 +606,7 @@ class CalibrationPanel(QWidget):
         self._profile_dirty = False
         self._refresh_profile_combo(saved['id'])
         self.lbl_profile_status.setText(f'已保存：{saved["name"]}')
-        self.lbl_profile_status.setStyleSheet('color: #0f766e;')
+        set_prop(self.lbl_profile_status, 'tone', 'success')
         self.btn_delete_profile.setEnabled(True)
         self._show_status(f'批次参数“{saved["name"]}”已保存')
         logger.info(f'批次参数已保存: {saved["name"]}')
@@ -639,7 +675,7 @@ class CalibrationPanel(QWidget):
             self.calibration_data = None
             self._loaded_data_path = ''
             self.lbl_data_status.setText(f'加载失败：{safe_exception_message(exc)}')
-            self.lbl_data_status.setStyleSheet('color: #b91c1c;')
+            set_prop(self.lbl_data_status, 'tone', 'danger')
             if show_dialog:
                 handle_ui_exception(self, logger, '加载校正数据', exc)
             return False
@@ -647,8 +683,8 @@ class CalibrationPanel(QWidget):
         self._loaded_data_path = os.path.abspath(filepath)
         warning = '；样本少于 30，结果可能不稳定' if data['small_sample_warning'] else ''
         self.lbl_data_status.setText(f'已加载 {data["sample_count"]} 条样本{warning}')
-        self.lbl_data_status.setStyleSheet(
-            'color: #b45309;' if data['small_sample_warning'] else 'color: #0f766e;')
+        set_prop(self.lbl_data_status, 'tone',
+                 'warning' if data['small_sample_warning'] else 'success')
         self._update_preview(data)
         self.result_tabs.setCurrentIndex(2)
         self._show_status(f'已加载 {data["sample_count"]} 条标定数据')
@@ -736,21 +772,22 @@ class CalibrationPanel(QWidget):
         result['completed_at'] = dt.datetime.now().isoformat(timespec='seconds')
         self.result = result
         params = result['optimized_params']
-        self.lbl_yy_result.setText(f'{params["yy_r4_ZT"]:.6f}')
-        self.lbl_zz_result.setText(f'{params["zz_r4_ZT"]:.6f}')
+        self.lbl_yy_result.setText(num_fixed(params['yy_r4_ZT'], 3))
+        self.lbl_zz_result.setText(num_fixed(params['zz_r4_ZT'], 3))
         if result['initial_cost'] > 0:
             reduction = (result['initial_cost'] - result['final_cost']) / result['initial_cost'] * 100
         else:
             reduction = 0.0
-        self.lbl_cost_result.setText(f'{reduction:.2f}%')
+        self.lbl_cost_result.setText(num_fixed(reduction, 1))
         self._update_metrics(result['metrics'])
         self._plot_result(result)
         status = '收敛' if result['success'] else '已结束（优化器未报告收敛）'
         self.txt_result.setPlainText(
             f'优化状态：{status}\n'
-            f'迭代次数：{result["iterations"]}\n'
-            f'初始成本：{result["initial_cost"]:.8g}  →  最终成本：{result["final_cost"]:.8g}\n'
-            f'建议参数：yy_r4_ZT = {params["yy_r4_ZT"]:.6f}，zz_r4_ZT = {params["zz_r4_ZT"]:.6f}')
+            f'迭代次数：{count(result["iterations"])}\n'
+            f'初始成本：{num(result["initial_cost"])}  →  最终成本：{num(result["final_cost"])}\n'
+            f'建议参数：yy_r4_ZT = {num_fixed(params["yy_r4_ZT"], 3)} m，'
+            f'zz_r4_ZT = {num_fixed(params["zz_r4_ZT"], 3)} m')
         self.btn_copy.setEnabled(True)
         self.btn_apply_result.setEnabled(True)
         self.btn_export.setEnabled(True)
@@ -796,7 +833,11 @@ class CalibrationPanel(QWidget):
                 before = metrics[angle_key]['before'][metric_key]
                 after = metrics[angle_key]['after'][metric_key]
                 change = after - before
-                values = (angle_label, metric_label, f'{before:.6f}', f'{after:.6f}', f'{change:+.6f}')
+                values = (
+                    angle_label, metric_label,
+                    num_fixed(before, 2), num_fixed(after, 2),
+                    delta(change, nd=2),
+                )
                 for column, value in enumerate(values):
                     item = QTableWidgetItem(value)
                     if column >= 2:
@@ -807,7 +848,8 @@ class CalibrationPanel(QWidget):
     def _draw_empty_plot(self):
         self.figure.clear()
         axis = self.figure.add_subplot(111)
-        axis.text(0.5, 0.5, '等待校正结果', ha='center', va='center', color='#64748b')
+        axis.text(0.5, 0.5, '运行校正后显示误差曲线', ha='center', va='center',
+                  color=TOKENS['n500'], fontsize=9)
         axis.set_axis_off()
         self.figure.tight_layout()
         self.canvas.draw_idle()
@@ -822,9 +864,12 @@ class CalibrationPanel(QWidget):
             (axes[1], series['err_el_orig'], series['err_el_opt'], '俯仰角误差'),
         )
         for axis, before, after, title in configs:
-            axis.plot(sample_index, before, color='#dc2626', linewidth=1.2, label='优化前')
-            axis.plot(sample_index, after, color='#059669', linewidth=1.3, label='优化后')
-            axis.axhline(0, color='#475569', linestyle='--', linewidth=0.8)
+            axis.plot(sample_index, before, color=CHART_COLORS[1],
+                      linewidth=1.4, label='优化前')
+            axis.plot(sample_index, after, color=CHART_COLORS[2],
+                      linewidth=1.4, label='优化后')
+            axis.axhline(0, color=TOKENS['n600'], linestyle=(0, (4, 3)),
+                         linewidth=0.8)
             axis.set_title(title)
             axis.set_ylabel('误差 (deg)')
             axis.grid(True, alpha=0.25)

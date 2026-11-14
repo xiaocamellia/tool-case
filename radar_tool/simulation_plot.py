@@ -1,3 +1,4 @@
+from .ui_theme import CHART_COLORS  # V2 §3.4 图表色板
 """Plotting mixins for the interferometer simulation panel."""
 
 import numpy as np
@@ -23,11 +24,11 @@ class SimulationPlotMixin:
         zs = pos[:, 1]  # Z坐标
 
         # 绘制阵元
-        ax.scatter(xs, ys, zs, s=80, c="#1d4ed8", marker="o", zorder=5, label="阵元")
+        ax.scatter(xs, ys, zs, s=80, c=CHART_COLORS[0], marker="o", zorder=5, label="阵元")
 
         # 标注编号
         for i, (x, y, z) in enumerate(zip(xs, ys, zs)):
-            ax.text(x, y, z, f"  {i+1}", fontsize=8, fontweight="bold", color="#1d4ed8")
+            ax.text(x, y, z, f"  {i+1}", fontsize=8, fontweight="bold", color=CHART_COLORS[0])
 
         # 绘制阵面（矩形的Y-Z平面示意）
         y_margin = max(np.ptp(ys), 0.05) * 0.15
@@ -51,7 +52,7 @@ class SimulationPlotMixin:
                 [z_center + z_span / 2, z_center + z_span / 2],
             ]
         )
-        ax.plot_surface(xx, yy, zz, alpha=0.06, color="#6366f1")
+        ax.plot_surface(xx, yy, zz, alpha=0.06, color=CHART_COLORS[4])
 
         # 绘制每个目标的来波方向箭头（从阵面中心沿X方向出射）
         try:
@@ -59,7 +60,7 @@ class SimulationPlotMixin:
         except Exception:
             targets = [{"theta": 30, "phi": 0}]
         arrow_len = max(y_span, z_span, 0.1) * 0.6
-        target_colors = ["#ef4444", "#f59e0b", "#10b981", "#8b5cf6", "#ec4899", "#14b8a6"]
+        target_colors = [CHART_COLORS[3], CHART_COLORS[1], CHART_COLORS[2], CHART_COLORS[4], CHART_COLORS[3], CHART_COLORS[6]]
         for idx, target in enumerate(targets):
             theta = target["theta"]
             phi = target["phi"]
@@ -108,19 +109,19 @@ class SimulationPlotMixin:
 
         # 转为dB
         P_db = 10 * np.log10(np.maximum(P, 1e-30))
-        ax.plot(thetas, P_db, color="#1d4ed8", linewidth=2.0, label="空间谱")
+        ax.plot(thetas, P_db, color=CHART_COLORS[0], linewidth=2.0, label="空间谱")
 
         for idx, target in enumerate(targets):
             theta_true = target["theta"]
             label = f"真实{idx + 1}: {theta_true}°" if idx == 0 else f"真实{idx + 1}: {theta_true}°"
             ax.axvline(
-                theta_true, color="#10b981", linestyle="--", linewidth=1.5, alpha=0.8, label=label
+                theta_true, color=CHART_COLORS[2], linestyle="--", linewidth=1.5, alpha=0.8, label=label
             )
 
         for idx, theta_est in enumerate(theta_ests):
             ax.axvline(
                 theta_est,
-                color="#ef4444",
+                color=CHART_COLORS[3],
                 linestyle=":",
                 linewidth=1.6,
                 alpha=0.9,
@@ -151,9 +152,9 @@ class SimulationPlotMixin:
             # 2D模式: 4个子图 (theta直方图, theta散点, phi直方图, phi散点)
             ax1 = fig.add_subplot(221)
             n, bins, patches = ax1.hist(
-                errors, bins="auto", density=True, alpha=0.7, color="#6366f1", edgecolor="white"
+                errors, bins="auto", density=True, alpha=0.7, color=CHART_COLORS[4], edgecolor="white"
             )
-            ax1.axvline(0, color="#10b981", linestyle="--", linewidth=1.5, label="无偏")
+            ax1.axvline(0, color=CHART_COLORS[2], linestyle="--", linewidth=1.5, label="无偏")
             ax1.set_xlabel("θ误差 (°)")
             ax1.set_ylabel("概率密度")
             ax1.set_title("方位角误差分布", fontsize=11, fontweight="bold")
@@ -161,8 +162,8 @@ class SimulationPlotMixin:
             ax1.legend(fontsize=8)
 
             ax2 = fig.add_subplot(222)
-            ax2.scatter(range(len(errors)), errors, s=8, alpha=0.5, color="#6366f1")
-            ax2.axhline(0, color="#10b981", linestyle="--", linewidth=1.0)
+            ax2.scatter(range(len(errors)), errors, s=8, alpha=0.5, color=CHART_COLORS[4])
+            ax2.axhline(0, color=CHART_COLORS[2], linestyle="--", linewidth=1.0)
             ax2.set_xlabel("试验次数")
             ax2.set_ylabel("θ误差 (°)")
             ax2.set_title("方位角各次试验误差", fontsize=11, fontweight="bold")
@@ -170,9 +171,9 @@ class SimulationPlotMixin:
 
             ax3 = fig.add_subplot(223)
             n_p, bins_p, patches_p = ax3.hist(
-                errors_phi, bins="auto", density=True, alpha=0.7, color="#f59e0b", edgecolor="white"
+                errors_phi, bins="auto", density=True, alpha=0.7, color=CHART_COLORS[1], edgecolor="white"
             )
-            ax3.axvline(0, color="#10b981", linestyle="--", linewidth=1.5, label="无偏")
+            ax3.axvline(0, color=CHART_COLORS[2], linestyle="--", linewidth=1.5, label="无偏")
             ax3.set_xlabel("φ误差 (°)")
             ax3.set_ylabel("概率密度")
             ax3.set_title("俯仰角误差分布", fontsize=11, fontweight="bold")
@@ -180,8 +181,8 @@ class SimulationPlotMixin:
             ax3.legend(fontsize=8)
 
             ax4 = fig.add_subplot(224)
-            ax4.scatter(range(len(errors_phi)), errors_phi, s=8, alpha=0.5, color="#f59e0b")
-            ax4.axhline(0, color="#10b981", linestyle="--", linewidth=1.0)
+            ax4.scatter(range(len(errors_phi)), errors_phi, s=8, alpha=0.5, color=CHART_COLORS[1])
+            ax4.axhline(0, color=CHART_COLORS[2], linestyle="--", linewidth=1.0)
             ax4.set_xlabel("试验次数")
             ax4.set_ylabel("φ误差 (°)")
             ax4.set_title("俯仰角各次试验误差", fontsize=11, fontweight="bold")
@@ -190,9 +191,9 @@ class SimulationPlotMixin:
             # 1D模式: 2个子图 (保持不变)
             ax1 = fig.add_subplot(121)
             n, bins, patches = ax1.hist(
-                errors, bins="auto", density=True, alpha=0.7, color="#6366f1", edgecolor="white"
+                errors, bins="auto", density=True, alpha=0.7, color=CHART_COLORS[4], edgecolor="white"
             )
-            ax1.axvline(0, color="#10b981", linestyle="--", linewidth=1.5, label="无偏")
+            ax1.axvline(0, color=CHART_COLORS[2], linestyle="--", linewidth=1.5, label="无偏")
             ax1.set_xlabel("误差 (°)")
             ax1.set_ylabel("概率密度")
             ax1.set_title("误差分布直方图", fontsize=11, fontweight="bold")
@@ -200,8 +201,8 @@ class SimulationPlotMixin:
             ax1.legend(fontsize=8)
 
             ax2 = fig.add_subplot(122)
-            ax2.scatter(range(len(errors)), errors, s=8, alpha=0.5, color="#6366f1")
-            ax2.axhline(0, color="#10b981", linestyle="--", linewidth=1.0)
+            ax2.scatter(range(len(errors)), errors, s=8, alpha=0.5, color=CHART_COLORS[4])
+            ax2.axhline(0, color=CHART_COLORS[2], linestyle="--", linewidth=1.0)
             ax2.set_xlabel("试验次数")
             ax2.set_ylabel("误差 (°)")
             ax2.set_title("各次试验误差", fontsize=11, fontweight="bold")

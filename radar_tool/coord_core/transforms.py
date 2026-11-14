@@ -143,7 +143,7 @@ def check_orthonormal(matrix, name: str = "旋转矩阵", tol: float = _ORTHO_TO
     det_err = abs(det - 1.0)
     if ortho_err > tol or det_err > tol:
         raise ValidationError(
-            f"{name} 未正交归一：‖RᵀR−I‖∞={ortho_err:.3e}，|det−1|={det_err:.3e}（容差 {tol:.0e}）"
+            f"{name} 未正交归一：‖RᵀR-I‖∞={ortho_err:.3e}，|det-1|={det_err:.3e}（容差 {tol:.0e}）"
         )
 
 
@@ -164,7 +164,7 @@ def split_transform(transform) -> Tuple[Attitude, np.ndarray]:
 
 
 def invert_transform(transform) -> np.ndarray:
-    """``T⁻¹ = [Rᵀ −Rᵀt; 0 1]``。"""
+    """``T⁻¹ = [Rᵀ -Rᵀt; 0 1]``。"""
     array = np.asarray(transform, dtype=float)
     if array.shape != (4, 4):
         raise ValidationError("齐次变换必须是 4×4")
@@ -263,7 +263,7 @@ def parse_rotation_spec(spec, *, default_quat_order: str = "wxyz",
 
 
 def orthonormal_deviation(matrix) -> Tuple[float, float]:
-    """返回 (‖RᵀR−I‖∞, |det−1|)，用于校验报错信息。"""
+    """返回 (‖RᵀR-I‖∞, |det-1|)，用于校验报错信息。"""
     array = np.asarray(matrix, dtype=float)
     gram = array.T @ array
     ortho_err = float(np.max(np.abs(gram - np.eye(3))))

@@ -19,6 +19,7 @@ from PyQt5.QtWidgets import (
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
+from .ui_theme import set_text_tone, set_prop, set_variant  # V2 语义样式工具
 from .alignment import (
     apply_time_mapping, calculate_error_metrics, estimate_time_mapping,
     interpolate_at,
@@ -119,15 +120,15 @@ class CompareDataMixin:
                 f'雷达列名: {os.path.basename(self.compare_meta_filepath)} '
                 f'({len(self.compare_meta_cols)} 列，自动匹配)'
             )
-            self.lbl_cmp_meta.setStyleSheet('color: #0f766e;')
+            set_text_tone(self.lbl_cmp_meta, 'success')
         else:
             self.lbl_cmp_meta.setText('雷达列名: 未自动找到，可手动加载')
-            self.lbl_cmp_meta.setStyleSheet('color: #b45309;')
+            set_text_tone(self.lbl_cmp_meta, 'warning')
         self.lbl_cmp_test.setText(
             f'雷达数据: {os.path.basename(self.compare_test_filepath)} '
             f'({len(dataframe)} 行)'
         )
-        self.lbl_cmp_test.setStyleSheet('color: #334155;')
+        set_text_tone(self.lbl_cmp_test, '')
         self._refresh_compare_column_combos(reset_preprocessing=True)
         self._invalidate_compare_result()
 
@@ -139,7 +140,7 @@ class CompareDataMixin:
             f'真值数据: {os.path.basename(self.compare_truth_filepath)} '
             f'({len(dataframe)} 行)'
         )
-        self.lbl_cmp_truth.setStyleSheet('color: #334155;')
+        set_text_tone(self.lbl_cmp_truth, '')
         self._refresh_compare_column_combos()
         self._detect_time_unit(dataframe)  # TR-02
         self._invalidate_compare_result()
@@ -178,9 +179,7 @@ class CompareDataMixin:
                     if not hasattr(self, '_lbl_time_unit_hint'):
                         from PyQt5.QtWidgets import QLabel
                         self._lbl_time_unit_hint = QLabel('已按差值量级推断')
-                        self._lbl_time_unit_hint.setStyleSheet(
-                            'color: #16a34a; font-size: 10px;'
-                        )
+                        set_text_tone(self._lbl_time_unit_hint, 'success')
                         # 插入到时间单位行
                         parent_layout = self.combo_cmp_truth_time_unit.parent().layout()
                         if parent_layout is not None:
@@ -360,7 +359,7 @@ class CompareDataMixin:
             self.compare_meta_cols = DataLoader.load_column_names(filepath)
             self.compare_meta_filepath = filepath
             self.lbl_cmp_meta.setText(f'雷达列名: {os.path.basename(filepath)} ({len(self.compare_meta_cols)} 列)')
-            self.lbl_cmp_meta.setStyleSheet('color: #334155;')
+            set_text_tone(self.lbl_cmp_meta, '')
             if self.compare_test_filepath:
                 source = (
                     self.compare_test_original_df
@@ -642,10 +641,10 @@ class CompareDataMixin:
             self.lbl_cmp_range_count.setText(
                 f'交集保留: {selected} / 原始 {total} 样点'
             )
-            self.lbl_cmp_range_count.setStyleSheet('color: #475569;')
+            set_text_tone(self.lbl_cmp_range_count, '')
         except ValueError:
             self.lbl_cmp_range_count.setText(f'当前范围无效 / {total} 样点')
-            self.lbl_cmp_range_count.setStyleSheet('color: #b91c1c;')
+            set_text_tone(self.lbl_cmp_range_count, 'danger')
     def _on_compare_range_changed(self):
         had_result = self.compare_last_result is not None
         self._update_compare_range_label()
@@ -806,7 +805,7 @@ class CompareDataMixin:
         layout.addWidget(select_all, 0, 0, 1, 3)
         for column, text in enumerate(('启用', '维度', '野点阈值')):
             header = QLabel(text)
-            header.setStyleSheet('color: #64748b; font-weight: 600;')
+            set_text_tone(header, 'muted')
             layout.addWidget(header, 1, column)
         row_widgets = {}
         for row, metric in enumerate(available, 2):

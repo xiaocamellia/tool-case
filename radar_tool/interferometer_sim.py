@@ -19,6 +19,7 @@ from matplotlib.backends.backend_qt5agg import (
 )
 from matplotlib.figure import Figure
 
+from .ui_theme import set_text_tone, set_prop, set_variant  # V2 语义样式工具
 from .ui_theme import set_button_icon, style_primary_button, style_warning_button
 from .error_ui import handle_ui_exception
 from .errors import log_exception, safe_exception_message
@@ -95,7 +96,7 @@ class InterferometerSimPanel(SimulationResultMixin, SimulationPlotMixin, QWidget
         
         self.btn_run = QPushButton('▶ 开始仿真')
         self.btn_run.clicked.connect(self.run_simulation)
-        self.btn_run.setStyleSheet('background-color: #4CAF50; color: white; font-weight: bold; padding: 8px;')
+        style_primary_button(self.btn_run)
         set_button_icon(self.btn_run, 'play')
         style_primary_button(self.btn_run)
         ctrl_layout.addWidget(self.btn_run)
@@ -216,7 +217,7 @@ class InterferometerSimPanel(SimulationResultMixin, SimulationPlotMixin, QWidget
         # ---- 第3行右侧: 波长 ----
         layout.addWidget(QLabel('波长λ:'), 3, 2)
         self.lbl_wavelength = QLabel('0.1250 m')
-        self.lbl_wavelength.setStyleSheet('font-weight: bold; color: #1d4ed8;')
+        set_text_tone(self.lbl_wavelength, 'primary')
         layout.addWidget(self.lbl_wavelength, 3, 3)
         
         # ---- 第4行: 自定义坐标按钮 ----
@@ -702,7 +703,7 @@ class InterferometerSimPanel(SimulationResultMixin, SimulationPlotMixin, QWidget
             '坐标系说明：右手系 XYZ，X轴为阵面法线方向，Y轴向右，Z轴向上。\n'
             '阵元安装在 Y-Z 平面（X=0），输入 Y 和 Z 坐标即可。'
         )
-        info_label.setStyleSheet('color: #334155; font-size: 10px;')
+        set_text_tone(info_label, '')
         dlg_layout.addWidget(info_label)
         
         # 表格

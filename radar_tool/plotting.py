@@ -57,7 +57,11 @@ def default_export_basename(file_label, col_names):
 
 
 def style_axes_legend(ax, fontsize=LEGEND_FONT_SIZE, loc='upper right'):
-    """统一图例样式：小字号、半透明边框，默认置于图内右上角。"""
+    """统一图例样式：小字号、无边框（V2 §4.14），默认置于图内右上角。
+
+    颜色、字号、字族全部来自 ``app_config.MATPLOTLIB_RC_PARAMS``，
+    这里不再写任何字面色值，避免与全局 rcParams 形成两套口径。
+    """
     handles, labels = ax.get_legend_handles_labels()
     if not handles:
         return None
@@ -69,11 +73,8 @@ def style_axes_legend(ax, fontsize=LEGEND_FONT_SIZE, loc='upper right'):
         labels,
         loc=loc,
         fontsize=fontsize,
-        frameon=True,
-        framealpha=0.9,
-        edgecolor='#cbd5e1',
+        frameon=False,
     )
-    legend.get_frame().set_linewidth(0.8)
     return legend
 
 

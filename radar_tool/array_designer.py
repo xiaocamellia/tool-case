@@ -26,7 +26,13 @@ from matplotlib.backends.backend_qt5agg import (
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 
-from .ui_theme import set_button_icon, style_primary_button, style_warning_button
+from .ui_theme import (
+    CHART_COLORS, repolish, set_button_icon, set_prop, set_variant,
+    style_primary_button, style_warning_button,
+)
+from .ui_result_card import PageHeader
+from .fmt import MISSING, num, num_fixed
+from .plotting import style_axes_legend
 from .error_ui import handle_ui_exception
 from .errors import safe_exception_message
 from .logger import get_logger
@@ -79,41 +85,56 @@ class ArrayDesignerPanel(QWidget):
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
 
-        # 标题
-        title = QLabel('📡 阵列设计助手')
-        title.setStyleSheet('font-size: 18px; font-weight: bold; color: #1e293b;')
-        layout.addWidget(title)
+        # 页头（V2 §4.2）
+        header = PageHeader(
+            '阵列设计助手',
+            '方向图 + 阵元表 + 指标表；左侧栏固定最小宽度以保证坐标列不截断',
+        )
+        layout.addWidget(header)
 
         # 控制栏
         ctrl_layout = QHBoxLayout()
+        ctrl_layout.setSpacing(8)
         self.combo_template = QComboBox()
         self.combo_template.addItems(['均匀线阵 (ULA)', '均匀圆阵 (UCA)', '矩形面阵', 'L型阵列', '十字阵', '自定义'])
+        self.combo_template.setMaximumWidth(200)
         self.combo_template.currentIndexChanged.connect(self._on_template_change)
-        ctrl_layout.addWidget(QLabel('阵列类型:'))
-        ctrl_layout.addWidget(self.combo_template, 1)
+        _type_label = QLabel('阵列类型')
+        _type_label.setObjectName('textMuted')
+        ctrl_layout.addWidget(_type_label)
+        ctrl_layout.addWidget(self.combo_template)
 
-        ctrl_layout.addWidget(QLabel('阵元数:'))
+        _n_label = QLabel('阵元数')
+        _n_label.setObjectName('textMuted')
+        ctrl_layout.addWidget(_n_label)
         self.spin_N = QSpinBox()
         self.spin_N.setRange(2, 128)
         self.spin_N.setValue(8)
+        self.spin_N.setMaximumWidth(80)
         self.spin_N.valueChanged.connect(self._on_param_change)
         ctrl_layout.addWidget(self.spin_N)
 
-        ctrl_layout.addWidget(QLabel('间距(λ):'))
+        _d_label = QLabel('间距 (λ)')
+        _d_label.setObjectName('textMuted')
+        ctrl_layout.addWidget(_d_label)
         self.spin_d = QDoubleSpinBox()
         self.spin_d.setRange(0.1, 5.0)
         self.spin_d.setValue(0.5)
         self.spin_d.setSingleStep(0.1)
+        self.spin_d.setMaximumWidth(90)
         self.spin_d.valueChanged.connect(self._on_param_change)
         ctrl_layout.addWidget(self.spin_d)
 
-        self.uca_radius_label = QLabel('UCA半径(λ):')
+        self.uca_radius_label = QLabel('UCA 半径 (λ)')
+        self.uca_radius_label.setObjectName('textMuted')
         self.spin_radius = QDoubleSpinBox()
         self.spin_radius.setRange(0.1, 100.0)
         self.spin_radius.setValue(2.0)
         self.spin_radius.setSingleStep(0.1)
+        self.spin_radius.setMaximumWidth(90)
         self.spin_radius.valueChanged.connect(self._on_param_change)
         ctrl_layout.addWidget(self.uca_radius_label)
         ctrl_layout.addWidget(self.spin_radius)
@@ -177,21 +198,19 @@ class ArrayDesignerPanel(QWidget):
 
         self.combo_weight = QComboBox()
         self.combo_weight.addItems(['均匀加权', '余弦加权', '汉明加权', '切比雪夫近似（副瓣约束暂未实现）'])
+        self.combo_weight.setMaximumWidth(240)
         self.combo_weight.currentIndexChanged.connect(self._on_param_change)
-        ctrl_layout.addWidget(QLabel('加权:'))
-        ctrl_layout.addWidget(self.combo_weight, 1)
+        _w_label = QLabel('加权')
+        _w_label.setObjectName('textMuted')
+        ctrl_layout.addWidget(_w_label)
+        ctrl_layout.addWidget(self.combo_weight)
 
-        self.btn_edit_custom = QPushButton('✏️ 编辑自定义')
-        self.btn_edit_custom.setStyleSheet("""
-            QPushButton {
-                background-color: #f59e0b; color: white; border: none;
-                border-radius: 4px; padding: 4px 10px; font-size: 12px;
-            }
-            QPushButton:hover { background-color: #d97706; }
-        """)
+        self.btn_edit_custom = QPushButton('编辑自定义')
+        set_variant(self.btn_edit_custom, 'secondary')
         self.btn_edit_custom.clicked.connect(self._edit_custom_coords)
         self.btn_edit_custom.hide()
         ctrl_layout.addWidget(self.btn_edit_custom)
+        ctrl_layout.addStretch(1)
 
         layout.addLayout(ctrl_layout)
 
@@ -200,8 +219,10 @@ class ArrayDesignerPanel(QWidget):
 
         # 左侧：阵列布局 + 坐标表格
         left_widget = QWidget()
+        left_widget.setMinimumWidth(340)   # W1：4 列坐标表 + 图，1024 下不横向滚动
         left_layout = QVBoxLayout(left_widget)
         left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(6)
 
         # 阵列俯视图
         self.array_figure = Figure(figsize=(3, 3), dpi=100, facecolor='white')
@@ -212,19 +233,27 @@ class ArrayDesignerPanel(QWidget):
         # 坐标表格
         self.table = QTableWidget()
         self.table.setColumnCount(4)
-        self.table.setHorizontalHeaderLabels(['X (m)', 'Y (m)', '幅度', '相位(°)'])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.setHorizontalHeaderLabels(['X (m)', 'Y (m)', '幅度', '相位 (°)'])
+        # §4.6 / §5.2 ②：按内容定宽，禁止手写固定列宽。
+        # 实测 Consolas 10pt 下 "-0.052" 占 78px，加 QSS 的左右 padding 需要
+        # ≥90px；手写 88px 列会被 Qt elide 成 "-0...."，数字就失去了可读性。
+        # ResizeToContents + 末列 stretch 在 1024 / 1560 两档都不会 elide。
+        _header = self.table.horizontalHeader()
+        _header.setSectionResizeMode(QHeaderView.ResizeToContents)
+        _header.setMinimumSectionSize(72)
+        _header.setStretchLastSection(True)
+        self.table.verticalHeader().setDefaultSectionSize(26)
+        self.table.setAlternatingRowColors(True)
         self.table.itemChanged.connect(self._on_table_edit)
         left_layout.addWidget(QLabel('阵元坐标'))
         # AR-01: 坐标来源标签与恢复按钮
         mode_row = QHBoxLayout()
-        self._lbl_mode = QLabel('来源: 模板生成')
-        self._lbl_mode.setStyleSheet('color: #16a34a; font-size: 10px;')
+        self._lbl_mode = QLabel('来源：模板生成')
+        self._lbl_mode.setObjectName('textMuted')
         mode_row.addWidget(self._lbl_mode)
         self._btn_restore_template = QPushButton('恢复模板')
-        self._btn_restore_template.setStyleSheet(
-            'QPushButton { font-size: 10px; padding: 2px 8px; }'
-        )
+        set_variant(self._btn_restore_template, 'secondary')
+        self._btn_restore_template.setProperty('compact', 'true')
         self._btn_restore_template.clicked.connect(self._restore_template)
         self._btn_restore_template.hide()
         mode_row.addWidget(self._btn_restore_template)
@@ -260,16 +289,47 @@ class ArrayDesignerPanel(QWidget):
         view_layout.addStretch()
         right_layout.addLayout(view_layout)
 
-        # 指标
-        self.metrics_text = QTextEdit()
-        self.metrics_text.setMaximumHeight(130)
-        self.metrics_text.setReadOnly(True)
-        self.metrics_text.setFont(QFont('Consolas', 9))
+        # 指标表（V2 §4.6 / 呈现规范 §4.4：真表格，不再用空格填充）
+        # 属性名保持 metrics_text（其它模块可能引用），类型由 QTextEdit 改为 QTableWidget
+        self.metrics_text = QTableWidget()
+        self.metrics_text.setObjectName('metricsTable')
+        self.metrics_text.setColumnCount(3)
+        self.metrics_text.setHorizontalHeaderLabels(['指标', '数值', '说明'])
+        _mheader = self.metrics_text.horizontalHeader()
+        # 指标名如 "3dB 波束宽度" 在 10pt 下超过固定 132px，会被 elide 成
+        # "3dB 波..."；前两列按内容定宽，说明列 stretch 吸收剩余空间。
+        _mheader.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        _mheader.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        _mheader.setSectionResizeMode(2, QHeaderView.Stretch)
+        _mheader.setMinimumSectionSize(72)
+        self.metrics_text.verticalHeader().setVisible(False)
+        self.metrics_text.verticalHeader().setDefaultSectionSize(26)
+        self.metrics_text.setAlternatingRowColors(True)
+        self.metrics_text.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.metrics_text.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.metrics_text.setWordWrap(False)
+        self.metrics_text.setMinimumHeight(140)
+        self.metrics_text.setMaximumHeight(220)
+        self.metrics_table = self.metrics_text
         right_layout.addWidget(self.metrics_text)
+
+        # 表格编辑错误条（同一错误只出现在这一处）
+        self._metrics_error = QFrame()
+        self._metrics_error.setObjectName('errorBar')
+        _err_layout = QHBoxLayout(self._metrics_error)
+        _err_layout.setContentsMargins(10, 4, 8, 4)
+        self._metrics_error_label = QLabel('')
+        self._metrics_error_label.setObjectName('errorText')
+        self._metrics_error_label.setWordWrap(True)
+        _err_layout.addWidget(self._metrics_error_label, 1)
+        self._metrics_error.setVisible(False)
+        right_layout.addWidget(self._metrics_error)
 
         splitter.addWidget(right_widget)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 2)
+        splitter.setChildrenCollapsible(False)
+        splitter.setSizes([380, 1060])
         layout.addWidget(splitter, 1)
 
         self._update_all()
@@ -307,11 +367,11 @@ class ArrayDesignerPanel(QWidget):
         try:
             self.fc = self._get_freq()
         except ValueError as exc:
-            self.edit_freq_custom.setStyleSheet('border: 1px solid #ef4444;')
+            set_prop(self.edit_freq_custom, 'state', 'error')
             self.edit_freq_custom.setToolTip(str(exc))
             logger.warning('频率设置无效: %s', exc)
             return
-        self.edit_freq_custom.setStyleSheet('')
+        set_prop(self.edit_freq_custom, 'state', '')
         self.edit_freq_custom.setToolTip('支持 Hz / kHz / MHz / GHz，也可直接输入纯数值（Hz）')
         self._on_param_change()
 
@@ -655,7 +715,7 @@ class ArrayDesignerPanel(QWidget):
 
         for i, (x, y) in enumerate(zip(xs, ys)):
             size = max(20, amps[i] * 80)
-            ax.scatter(x, y, s=size, c='#1d4ed8', marker='o', alpha=0.7, zorder=5)
+            ax.scatter(x, y, s=size, c=CHART_COLORS[0], marker='o', alpha=0.75, zorder=5)
             ax.annotate(str(i+1), (x, y), xytext=(4, 4),
                        textcoords='offset points', fontsize=6)
 
@@ -667,6 +727,8 @@ class ArrayDesignerPanel(QWidget):
         ax.set_ylabel('Y (m)', fontsize=8)
         ax.set_aspect('equal')
         ax.grid(True, linestyle='--', alpha=0.3)
+        # 3×3 小图不留边距会把竖排的 Y 轴标签裁到画布外，只看到半截 "(m)"
+        self.array_figure.tight_layout(pad=0.8)
         self.array_canvas.draw()
 
     def _refresh_all(self):
@@ -689,7 +751,7 @@ class ArrayDesignerPanel(QWidget):
             theta_deg = np.arange(-180, 181, 1)
             gains = self._calc_pattern(theta_deg)
             theta_rad = np.deg2rad(theta_deg)
-            ax.plot(theta_rad, gains, color='#1d4ed8', linewidth=1.8)
+            ax.plot(theta_rad, gains, color=CHART_COLORS[0], linewidth=1.4)
             ax.set_theta_offset(np.pi/2)
             ax.set_theta_direction(-1)
             ax.set_thetamin(-90)
@@ -707,11 +769,12 @@ class ArrayDesignerPanel(QWidget):
             gains = self._calc_pattern(theta_deg)
 
             ax = fig.add_subplot(111)
-            ax.plot(theta_deg, gains, color='#1d4ed8', linewidth=2.0, label='方向图')
+            ax.plot(theta_deg, gains, color=CHART_COLORS[0], linewidth=1.4, label='方向图')
 
             # 3dB线
             max_g = np.max(gains)
-            ax.axhline(max_g - 3, color='#10b981', linestyle='--', linewidth=1, alpha=0.7, label='-3dB')
+            ax.axhline(max_g - 3, color=CHART_COLORS[2], linestyle=(0, (4, 3)),
+                       linewidth=1.2, alpha=0.9, label='-3 dB')
 
             ax.set_xlabel(label, fontsize=10)
             ax.set_ylabel('归一化增益 (dB)', fontsize=10)
@@ -719,7 +782,7 @@ class ArrayDesignerPanel(QWidget):
             ax.grid(True, linestyle='--', alpha=0.3)
             ax.set_xlim(-90, 90)
             ax.set_ylim(max(-50, np.min(gains) - 2), 3)
-            ax.legend(fontsize=8)
+            style_axes_legend(ax, loc='upper right')
 
         with warnings.catch_warnings():
             warnings.simplefilter('ignore', UserWarning)
@@ -727,17 +790,17 @@ class ArrayDesignerPanel(QWidget):
             self.pattern_canvas.draw()
 
     def _update_metrics(self):
-        """更新指标显示"""
+        """更新指标表（3 列：指标 / 数值 / 说明，数值列右对齐等宽）。"""
         theta_deg = np.arange(-90, 91, 0.5)
         gains = self._calc_pattern(theta_deg)
         metrics = self._extract_metrics(theta_deg, gains)
 
         if metrics['grating_level'] > -10:
-            warning = '🔴 ⚠️ 栅瓣严重！'
+            warning, warning_tone = '栅瓣严重', 'danger'
         elif metrics['grating_level'] > -20:
-            warning = '🟡 注意栅瓣'
+            warning, warning_tone = '注意栅瓣', 'warning'
         else:
-            warning = '🟢 栅瓣正常'
+            warning, warning_tone = '栅瓣正常', 'success'
 
         type_labels = {
             'ULA': '均匀线阵',
@@ -745,44 +808,75 @@ class ArrayDesignerPanel(QWidget):
             'RECT': '矩形面阵',
             'CUSTOM': '自定义/复合阵',
         }
-        aperture_label = (
-            f'{metrics["aperture"]:.2f} λ'
-            if metrics['array_type'] != 'RECT'
-            else (
-                f'X={metrics["aperture_x"]:.2f}λ, '
-                f'Y={metrics["aperture_y"]:.2f}λ'
+        aperture_value = num_fixed(metrics['aperture'], 2, unit='λ')
+        aperture_note = '构型相关'
+        if metrics['array_type'] == 'RECT':
+            aperture_value = (
+                f'{num_fixed(metrics["aperture_x"], 2)}λ / '
+                f'{num_fixed(metrics["aperture_y"], 2)}λ'
             )
+            aperture_note = 'X / Y 孔径'
+        unambig_value = (
+            f'±{num_fixed(metrics["unambig"], 1, unit="°")}'
+            if metrics['array_type'] not in ('UCA', 'CUSTOM')
+            else MISSING
         )
-        unambig_text = (
-            f'±{metrics["unambig"]:.1f}°'
+        unambig_note = (
+            '间距相关的无模糊范围'
             if metrics['array_type'] not in ('UCA', 'CUSTOM')
             else '圆阵/自定义按数值方向图判断'
         )
         sidelobe_note = (
-            f'左 {metrics["left_sll"]:.1f} / '
-            f'右 {metrics["right_sll"]:.1f} dB'
+            f'左 {num_fixed(metrics["left_sll"], 1)} / '
+            f'右 {num_fixed(metrics["right_sll"], 1)} dB'
         )
-        lines = [
-            f'{"指标":<16} {"数值":>10} {"说明":<28}',
-            f'{"─"*62}',
-            f'{"阵列类型":<16} {type_labels.get(metrics["array_type"], metrics["array_type"]):>10} {"":<28}',
-            f'{"阵元数":<16} {metrics["N"]:>10d} {"":<28}',
-            f'{"阵列增益":<16} {metrics["gain"]:>8.1f} dBi {"近似 10log10(N)+3":<28}',
-            f'{"3dB波束宽度":<16} {metrics["beamwidth"]:>8.2f}° {metrics["beamwidth_formula"]:<28}',
-            f'{"第一副瓣":<16} {metrics["first_sll"]:>8.1f} dB {sidelobe_note:<28}',
-            f'{"主瓣边界":<16} {metrics["main_left"]:>6.1f}°~{metrics["main_right"]:<6.1f}° {"-3dB连续区域":<28}',
-            f'{"阵列孔径":<16} {aperture_label:>10} {"构型相关":<28}',
-            f'{"无模糊范围":<16} {unambig_text:>10} {"":<28}',
-            f'',
-            f'{"栅瓣电平":<16} {metrics["grating_level"]:>8.1f} dB {warning}',
-            f'{"栅瓣公式":<16} {"":>10} {metrics["grating_formula"]}',
+        rows = [
+            ('阵列类型', type_labels.get(metrics['array_type'],
+                                       str(metrics['array_type'])), '构型模板'),
+            ('阵元数', num_fixed(metrics['N'], 0), MISSING),
+            ('阵列增益', num_fixed(metrics['gain'], 1, unit='dBi'),
+             '近似 10·log10(N) + 3'),
+            ('3dB 波束宽度', num_fixed(metrics['beamwidth'], 1, unit='°'),
+             str(metrics['beamwidth_formula'])),
+            ('第一副瓣', num_fixed(metrics['first_sll'], 1, unit='dB'),
+             sidelobe_note),
+            ('主瓣边界',
+             f'{num_fixed(metrics["main_left"], 1)}° ~ '
+             f'{num_fixed(metrics["main_right"], 1)}°',
+             '-3 dB 连续区域'),
+            ('阵列孔径', aperture_value, aperture_note),
+            ('无模糊范围', unambig_value, unambig_note),
+            ('栅瓣电平', num_fixed(metrics['grating_level'], 1, unit='dB'),
+             warning),
+            ('栅瓣公式', MISSING, str(metrics['grating_formula'])),
         ]
         if metrics['grating_level'] > -20 and metrics['array_type'] != 'UCA':
-            lines.append(
-                f'{"栅瓣角度":<16} {metrics["grating_angle"]:>8.1f}° '
-                f'{"间距需≤1λ":<20}'
-            )
-        self.metrics_text.setPlainText('\n'.join(lines))
+            rows.append((
+                '栅瓣角度',
+                num_fixed(metrics['grating_angle'], 1, unit='°'),
+                '间距需 ≤ 1λ',
+            ))
+
+        table = self.metrics_table
+        table.setRowCount(len(rows))
+        for row_index, (key, value, note) in enumerate(rows):
+            for column, text in enumerate((key, value, note)):
+                item = QTableWidgetItem(text)
+                item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                if column == 1:
+                    item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                else:
+                    item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                table.setItem(row_index, column, item)
+        # 栅瓣状态用右下角徽章表达（不用 emoji 染色）
+        self._grating_tone = warning_tone
+
+    def _show_metrics_error(self, message):
+        """阵元表输入错误：内联错误条（与输入框错误态一一对应）。"""
+        has_error = bool(message)
+        self._metrics_error.setVisible(has_error)
+        if has_error:
+            self._metrics_error_label.setText(f'阵元表输入无效：{message}')
 
     def _update_all(self):
         """全部更新"""
@@ -796,10 +890,20 @@ class ArrayDesignerPanel(QWidget):
         self.table.blockSignals(True)
         self.table.setRowCount(len(self.elements))
         for i, e in enumerate(self.elements):
-            self.table.setItem(i, 0, QTableWidgetItem(f'{e["x"]:.6f}'))
-            self.table.setItem(i, 1, QTableWidgetItem(f'{e["y"]:.6f}'))
-            self.table.setItem(i, 2, QTableWidgetItem(f'{e["amp"]:.4f}'))
-            self.table.setItem(i, 3, QTableWidgetItem(f'{e["phase"]:.1f}'))
+            values = (
+                num_fixed(e['x'], 3),
+                num_fixed(e['y'], 3),
+                num_fixed(e['amp'], 2),
+                num_fixed(e['phase'], 1),
+            )
+            for column, text in enumerate(values):
+                item = QTableWidgetItem(text)
+                # V2 §4.6 数值列必须等宽 + 右对齐。中文字体下 "-0.052" 占 68px，
+                # 而 84px 列减去左右各 10px padding 只剩 64px 内容区，会被 Qt
+                # elide 成 "-0...."；等宽字体下同样内容约 42px，可完整显示。
+                item.setFont(QFont('Consolas', 10))
+                item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                self.table.setItem(i, column, item)
         self.table.blockSignals(False)
 
     def _on_table_edit(self):
@@ -814,10 +918,11 @@ class ArrayDesignerPanel(QWidget):
                 parsed.append({'x': x, 'y': y, 'amp': amp, 'phase': phase})
             _validate_elements(parsed)
         except (ValueError, TypeError, AttributeError) as exc:
-            self.metrics_text.setPlainText(f'❌ {safe_exception_message(exc)}')
+            self._show_metrics_error(safe_exception_message(exc))
             logger.warning('阵元表格输入无效: %s', exc)
             self._update_table()
             return
+        self._show_metrics_error(None)
 
         self.elements = parsed
         # AR-01: 手工编辑后进入手工态
@@ -832,13 +937,15 @@ class ArrayDesignerPanel(QWidget):
         if not hasattr(self, '_lbl_mode'):
             return
         if getattr(self, '_is_manual_mode', False):
-            self._lbl_mode.setText('来源: 手工坐标')
-            self._lbl_mode.setStyleSheet('color: #d97706; font-size: 10px;')
+            self._lbl_mode.setText('来源：手工坐标')
+            self._lbl_mode.setProperty('tone', 'warning')
+            repolish(self._lbl_mode)
             if hasattr(self, '_btn_restore_template'):
                 self._btn_restore_template.show()
         else:
-            self._lbl_mode.setText('来源: 模板生成')
-            self._lbl_mode.setStyleSheet('color: #16a34a; font-size: 10px;')
+            self._lbl_mode.setText('来源：模板生成')
+            self._lbl_mode.setProperty('tone', 'success')
+            repolish(self._lbl_mode)
             if hasattr(self, '_btn_restore_template'):
                 self._btn_restore_template.hide()
 
@@ -862,31 +969,34 @@ class ArrayDesignerPanel(QWidget):
             '坐标系说明：XY 平面，阵元位于 Z=0 平面。\n'
             '输入 X (m) 和 Y (m) 坐标即可。每次编辑完成后点击确定生效。'
         )
-        info_label.setStyleSheet('color: #334155; font-size: 10px;')
+        info_label.setObjectName('textMuted')
+        info_label.setWordWrap(True)
         dlg_layout.addWidget(info_label)
 
         # 表格
         self.custom_coords_table = QTableWidget()
         self.custom_coords_table.setColumnCount(4)
         self.custom_coords_table.setHorizontalHeaderLabels(
-            ['X (m)', 'Y (m)', '幅度', '相位(°)'])
-        self.custom_coords_table.horizontalHeader().setStretchLastSection(True)
-        self.custom_coords_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+            ['X (m)', 'Y (m)', '幅度', '相位 (°)'])
+        _dheader = self.custom_coords_table.horizontalHeader()
+        _dheader.setSectionResizeMode(QHeaderView.Interactive)
+        _dheader.setMinimumSectionSize(56)
+        _dheader.setStretchLastSection(True)
         dlg_layout.addWidget(self.custom_coords_table, 1)
 
         # 按钮行
         btn_layout = QHBoxLayout()
-        btn_add = QPushButton('➕ 添加行')
+        btn_add = QPushButton('添加行')
         btn_add.clicked.connect(self._custom_add_row)
         btn_layout.addWidget(btn_add)
 
-        btn_remove = QPushButton('➖ 删除选中')
+        btn_remove = QPushButton('删除选中')
         btn_remove.clicked.connect(self._custom_remove_row)
         btn_layout.addWidget(btn_remove)
 
         btn_layout.addStretch()
 
-        btn_import = QPushButton('📂 从CSV导入')
+        btn_import = QPushButton('导入 CSV')
         btn_import.clicked.connect(self._custom_import_csv)
         btn_layout.addWidget(btn_import)
         dlg_layout.addLayout(btn_layout)
@@ -908,13 +1018,13 @@ class ArrayDesignerPanel(QWidget):
         self.custom_coords_table.setRowCount(len(self.elements))
         for i, element in enumerate(self.elements):
             self.custom_coords_table.setItem(
-                i, 0, QTableWidgetItem(f'{float(element["x"]):.6f}'))
+                i, 0, QTableWidgetItem(num_fixed(float(element["x"]), 3)))
             self.custom_coords_table.setItem(
-                i, 1, QTableWidgetItem(f'{float(element["y"]):.6f}'))
+                i, 1, QTableWidgetItem(num_fixed(float(element["y"]), 3)))
             self.custom_coords_table.setItem(
-                i, 2, QTableWidgetItem(f'{float(element["amp"]):.4f}'))
+                i, 2, QTableWidgetItem(num_fixed(float(element["amp"]), 2)))
             self.custom_coords_table.setItem(
-                i, 3, QTableWidgetItem(f'{float(element["phase"]):.1f}'))
+                i, 3, QTableWidgetItem(num_fixed(float(element["phase"]), 1)))
 
         dialog.exec_()
 
@@ -951,12 +1061,16 @@ class ArrayDesignerPanel(QWidget):
                     raise ValueError('自定义阵列至少需要 2 个有效阵元')
                 self.custom_coords_table.setRowCount(len(data))
                 for i, row in enumerate(data):
-                    self.custom_coords_table.setItem(i, 0, QTableWidgetItem(f'{row[0]:.6f}'))
-                    self.custom_coords_table.setItem(i, 1, QTableWidgetItem(f'{row[1]:.6f}'))
+                    self.custom_coords_table.setItem(
+                        i, 0, QTableWidgetItem(num_fixed(float(row[0]), 3)))
+                    self.custom_coords_table.setItem(
+                        i, 1, QTableWidgetItem(num_fixed(float(row[1]), 3)))
                     amp = float(row[2]) if data.shape[1] >= 3 else 1.0
                     phase = float(row[3]) if data.shape[1] >= 4 else 0.0
-                    self.custom_coords_table.setItem(i, 2, QTableWidgetItem(f'{amp:.4f}'))
-                    self.custom_coords_table.setItem(i, 3, QTableWidgetItem(f'{phase:.1f}'))
+                    self.custom_coords_table.setItem(
+                        i, 2, QTableWidgetItem(num_fixed(amp, 2)))
+                    self.custom_coords_table.setItem(
+                        i, 3, QTableWidgetItem(num_fixed(phase, 1)))
                 QMessageBox.information(self, '导入成功', f'已导入 {len(data)} 个阵元')
             else:
                 QMessageBox.warning(self, '格式错误', 'CSV文件至少需要2列数据 (X, Y)')

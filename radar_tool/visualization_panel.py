@@ -31,7 +31,8 @@ from .plotting import (
     resolve_figure_size, scaled_size_for_width, style_axes_legend,
 )
 from .ui_theme import (
-    set_button_icon, style_primary_button, style_warning_button,
+    CHART_COLORS, TOKENS, set_button_icon, set_variant, style_primary_button,
+    style_warning_button,
 )
 from .error_ui import handle_ui_exception
 from .errors import ExportError, safe_exception_message
@@ -242,12 +243,12 @@ class VisualizationPanel(QWidget):
         splitter.addWidget(right_widget)
 
         # 左侧数据管理面板保证底限宽度，不被右侧绘图区挤占
-        left_widget.setMinimumWidth(420)
+        left_widget.setMinimumWidth(320)
         splitter.setCollapsible(0, False)
         splitter.setCollapsible(1, False)
         splitter.setStretchFactor(0, 2)
         splitter.setStretchFactor(1, 3)
-        splitter.setSizes([620, 1500])
+        splitter.setSizes([360, 1080])
         layout.addWidget(splitter, 1)
 
         self._relax_minimum_widths()
@@ -284,48 +285,54 @@ class VisualizationPanel(QWidget):
         row1 = QHBoxLayout()
         row2 = QHBoxLayout()
 
-        self.btn_load = QPushButton('📂 加载数据文件(可多选)')
+        self.btn_load = QPushButton('加载数据集')
+        self.btn_load.setToolTip('打开一个或多个数据文件（可多选）')
         self.btn_load.clicked.connect(self.load_data_file)
         set_button_icon(self.btn_load, 'open')
-        style_primary_button(self.btn_load)
+        set_variant(self.btn_load, 'primary')
         row1.addWidget(self.btn_load)
 
-        self.btn_load_col = QPushButton('📄 加载列名文件')
+        self.btn_load_col = QPushButton('加载列名')
         self.btn_load_col.clicked.connect(self.load_column_file)
         set_button_icon(self.btn_load_col, 'file')
         row1.addWidget(self.btn_load_col)
 
-        self.btn_remove_dataset = QPushButton('🗑️ 移除当前数据集')
+        self.btn_remove_dataset = QPushButton('移除数据集')
+        self.btn_remove_dataset.setToolTip('从列表移除当前选中的数据集（不删除磁盘文件）')
         self.btn_remove_dataset.clicked.connect(self.remove_active_dataset)
         set_button_icon(self.btn_remove_dataset, 'delete')
-        style_warning_button(self.btn_remove_dataset)
+        set_variant(self.btn_remove_dataset, 'warning')
         row1.addWidget(self.btn_remove_dataset)
 
-        self.btn_clear_datasets = QPushButton('🧹 清空全部数据集')
+        self.btn_clear_datasets = QPushButton('清空数据集')
+        self.btn_clear_datasets.setToolTip('清空列表中的所有数据集（不删除磁盘文件）')
         self.btn_clear_datasets.clicked.connect(self.clear_all_datasets)
         set_button_icon(self.btn_clear_datasets, 'delete')
-        style_warning_button(self.btn_clear_datasets)
+        set_variant(self.btn_clear_datasets, 'warning')
         row1.addWidget(self.btn_clear_datasets)
 
-        row1.addWidget(QLabel('  数据文件:'))
+        _data_label = QLabel('数据文件')
+        _data_label.setObjectName('textMuted')
+        row1.addWidget(_data_label)
         self.lbl_data_file = QLabel('未加载')
-        self.lbl_data_file.setStyleSheet('color: gray;')
+        self.lbl_data_file.setObjectName('textMuted')
         row1.addWidget(self.lbl_data_file, 1)
 
         row2.addStretch()
 
-        self.btn_clear_overlay = QPushButton('🗑️ 清除叠加')
+        self.btn_clear_overlay = QPushButton('清除叠加')
         self.btn_clear_overlay.clicked.connect(self.clear_overlay)
         set_button_icon(self.btn_clear_overlay, 'clear')
         row2.addWidget(self.btn_clear_overlay)
 
-        self.btn_export = QPushButton('⬇ 导出高清图')
+        self.btn_export = QPushButton('导出图片')
+        self.btn_export.setToolTip('把当前图保存为图片文件')
         self.btn_export.clicked.connect(self.export_current_plot)
         set_button_icon(self.btn_export, 'save')
-        style_primary_button(self.btn_export)
+        set_variant(self.btn_export, 'secondary')
         row2.addWidget(self.btn_export)
 
-        self.btn_reset = QPushButton('🔄 重置')
+        self.btn_reset = QPushButton('重置')
         self.btn_reset.clicked.connect(self.reset_view)
         set_button_icon(self.btn_reset, 'reload')
         row2.addWidget(self.btn_reset)
@@ -390,18 +397,22 @@ class VisualizationPanel(QWidget):
         range_row1.addWidget(self.lbl_total_rows)
         range_row1.addStretch()
 
-        self.btn_save_range = QPushButton('保存范围预设')
+        self.btn_save_range = QPushButton('保存范围')
+        self.btn_save_range.setToolTip('把当前采样点范围保存为预设')
         self.btn_save_range.clicked.connect(self.save_range_preset)
         set_button_icon(self.btn_save_range, 'save')
-        range_row2.addWidget(self.btn_save_range)
+        set_variant(self.btn_save_range, 'secondary')
 
-        self.btn_refresh_plot = QPushButton('按当前范围重绘对比图')
+        self.btn_refresh_plot = QPushButton('重绘')
+        self.btn_refresh_plot.setToolTip('按当前范围重绘对比图')
         self.btn_refresh_plot.clicked.connect(self.redraw_current_range_plot)
         set_button_icon(self.btn_refresh_plot, 'refresh')
-        style_primary_button(self.btn_refresh_plot)
-        range_row2.addWidget(self.btn_refresh_plot)
+        set_variant(self.btn_refresh_plot, 'secondary')
         range_row2.addStretch()
 
+        range_row2.addWidget(self.btn_save_range)
+        range_row2.addWidget(self.btn_refresh_plot)
+        range_row2.addStretch()
         range_outer.addLayout(range_row1)
         range_outer.addLayout(range_row2)
 
@@ -435,11 +446,13 @@ class VisualizationPanel(QWidget):
         self.btn_apply_filter = QPushButton('应用过滤')
         self.btn_apply_filter.clicked.connect(self.apply_filter)
         set_button_icon(self.btn_apply_filter, 'apply')
+        set_variant(self.btn_apply_filter, 'secondary')
         filter_row2.addWidget(self.btn_apply_filter)
 
         self.btn_clear_filter = QPushButton('清除过滤')
         self.btn_clear_filter.clicked.connect(self.clear_filter)
         set_button_icon(self.btn_clear_filter, 'clear')
+        set_variant(self.btn_clear_filter, 'secondary')
         filter_row2.addWidget(self.btn_clear_filter)
         filter_row2.addStretch()
 
@@ -456,23 +469,26 @@ class VisualizationPanel(QWidget):
         self.btn_select_all = QPushButton('全选')
         self.btn_select_all.clicked.connect(self.select_all_columns)
         set_button_icon(self.btn_select_all, 'apply')
+        set_variant(self.btn_select_all, 'ghost')
         select_btn_layout.addWidget(self.btn_select_all)
 
         self.btn_deselect_all = QPushButton('全不选')
         self.btn_deselect_all.clicked.connect(self.deselect_all_columns)
         set_button_icon(self.btn_deselect_all, 'clear')
+        set_variant(self.btn_deselect_all, 'ghost')
         select_btn_layout.addWidget(self.btn_deselect_all)
 
-        self.btn_add_to_plot = QPushButton('▶ 添加到绘图')
+        self.btn_add_to_plot = QPushButton('添加曲线')
+        self.btn_add_to_plot.setToolTip('把勾选的参数加入当前图')
         self.btn_add_to_plot.clicked.connect(self.add_selected_to_plot)
-        self.btn_add_to_plot.setStyleSheet('background-color: #4CAF50; color: white; font-weight: bold;')
         set_button_icon(self.btn_add_to_plot, 'play')
+        set_variant(self.btn_add_to_plot, 'secondary')
         select_btn_layout.addWidget(self.btn_add_to_plot)
         select_btn_layout.addStretch()
 
         # 绑定目标提示（曲线始终绑定到当前页签图，轻量标签不占整行）
-        self.lbl_plot_target = QLabel('绘制到: 图1')
-        self.lbl_plot_target.setStyleSheet('color: #64748b;')
+        self.lbl_plot_target = QLabel('绘制到：图1')
+        self.lbl_plot_target.setObjectName('textMuted')
         self.lbl_plot_target.setToolTip('添加的曲线始终绑定到当前页签图')
         select_btn_layout.addWidget(self.lbl_plot_target)
         select_layout.addLayout(select_btn_layout)
@@ -495,11 +511,13 @@ class VisualizationPanel(QWidget):
         self.btn_remove_selected = QPushButton('移除选中')
         self.btn_remove_selected.clicked.connect(self.remove_selected_plot_item)
         set_button_icon(self.btn_remove_selected, 'delete')
+        set_variant(self.btn_remove_selected, 'secondary')
         btn_remove_layout.addWidget(self.btn_remove_selected)
 
-        self.btn_clear_all_plots = QPushButton('清空所有')
+        self.btn_clear_all_plots = QPushButton('清空全部')
         self.btn_clear_all_plots.clicked.connect(self.clear_all_plot_items)
         set_button_icon(self.btn_clear_all_plots, 'clear')
+        set_variant(self.btn_clear_all_plots, 'warning')
         btn_remove_layout.addWidget(self.btn_clear_all_plots)
         btn_remove_layout.addStretch()
 
@@ -529,29 +547,30 @@ class VisualizationPanel(QWidget):
         ctrl_row1 = QHBoxLayout()
         ctrl_row2 = QHBoxLayout()
 
-        self.btn_new_plot = QPushButton('🆕 新建图')
+        self.btn_new_plot = QPushButton('新建图')
         self.btn_new_plot.clicked.connect(self.create_new_plot_view)
         set_button_icon(self.btn_new_plot, 'file')
         ctrl_row1.addWidget(self.btn_new_plot)
 
-        self.btn_remove_plot = QPushButton('🗑 删除当前图')
+        self.btn_remove_plot = QPushButton('删除图')
+        self.btn_remove_plot.setToolTip('删除当前图页签及其中的曲线')
         self.btn_remove_plot.clicked.connect(self.remove_current_plot_view)
         set_button_icon(self.btn_remove_plot, 'delete')
-        style_warning_button(self.btn_remove_plot)
+        set_variant(self.btn_remove_plot, 'danger')
         ctrl_row1.addWidget(self.btn_remove_plot)
 
-        self.btn_plot = QPushButton('📊 绘制')
+        self.btn_plot = QPushButton('绘制')
+        self.btn_plot.setToolTip('按当前绘图项绘制曲线')
         self.btn_plot.clicked.connect(self.plot_data)
-        self.btn_plot.setStyleSheet('background-color: #2196F3; color: white; font-weight: bold; padding: 8px;')
         set_button_icon(self.btn_plot, 'play')
-        style_primary_button(self.btn_plot)
+        set_variant(self.btn_plot, 'primary')
         ctrl_row1.addWidget(self.btn_plot)
 
-        self.btn_overlay = QPushButton('➕ 叠加绘制 (保持上一幅)')
+        self.btn_overlay = QPushButton('叠加绘制')
+        self.btn_overlay.setToolTip('保留上一幅图，在其上追加当前曲线')
         self.btn_overlay.clicked.connect(self.plot_data_overlay)
-        self.btn_overlay.setStyleSheet('background-color: #FF9800; color: white; font-weight: bold;')
         set_button_icon(self.btn_overlay, 'refresh')
-        style_warning_button(self.btn_overlay)
+        set_variant(self.btn_overlay, 'secondary')
         ctrl_row1.addWidget(self.btn_overlay)
 
         self.chk_show_stats = QCheckBox('显示统计信息')
@@ -1427,10 +1446,11 @@ class VisualizationPanel(QWidget):
             ax.grid(True, linestyle='--', linewidth=0.7, alpha=0.28)
 
         for spine in ax.spines.values():
-            spine.set_linewidth(1.0)
-            spine.set_color('#334155')
+            spine.set_linewidth(0.8)
+            spine.set_color(TOKENS['n300'])
 
-        ax.tick_params(axis='both', which='major', labelsize=10, width=1.0, length=4, colors='#111827')
+        ax.tick_params(axis='both', which='major', labelsize=8.5, width=0.8,
+                       length=4, colors=TOKENS['n600'])
         ax.margins(x=0.01)
 
         if plot_items:

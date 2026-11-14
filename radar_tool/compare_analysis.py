@@ -21,6 +21,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 
+from .ui_theme import set_text_tone, set_prop, set_variant  # V2 语义样式工具
 from .alignment import (
     apply_time_mapping, calculate_error_metrics, estimate_time_mapping,
     interpolate_at,
@@ -142,7 +143,7 @@ class CompareAnalysisMixin(CompareDataMixin, CompareWorkerMixin, ComparePlotMixi
         style_primary_button(self.btn_cmp_load_test)
         layout.addWidget(self.btn_cmp_load_test, 0, 0)
         self.lbl_cmp_test = QLabel('雷达数据: 未加载')
-        self.lbl_cmp_test.setStyleSheet('color: #64748b;')
+        set_text_tone(self.lbl_cmp_test, 'muted')
         layout.addWidget(self.lbl_cmp_test, 0, 1)
 
         self.btn_cmp_load_meta = QPushButton('加载雷达列名')
@@ -150,7 +151,7 @@ class CompareAnalysisMixin(CompareDataMixin, CompareWorkerMixin, ComparePlotMixi
         set_button_icon(self.btn_cmp_load_meta, 'file')
         layout.addWidget(self.btn_cmp_load_meta, 1, 0)
         self.lbl_cmp_meta = QLabel('雷达列名: 未加载')
-        self.lbl_cmp_meta.setStyleSheet('color: #64748b;')
+        set_text_tone(self.lbl_cmp_meta, 'muted')
         layout.addWidget(self.lbl_cmp_meta, 1, 1)
 
         self.btn_cmp_load_truth = QPushButton('加载真值数据')
@@ -159,7 +160,7 @@ class CompareAnalysisMixin(CompareDataMixin, CompareWorkerMixin, ComparePlotMixi
         style_primary_button(self.btn_cmp_load_truth)
         layout.addWidget(self.btn_cmp_load_truth, 2, 0)
         self.lbl_cmp_truth = QLabel('真值数据: 未加载')
-        self.lbl_cmp_truth.setStyleSheet('color: #64748b;')
+        set_text_tone(self.lbl_cmp_truth, 'muted')
         layout.addWidget(self.lbl_cmp_truth, 2, 1)
 
         self.btn_cmp_preview = QPushButton('预览已加载数据')
@@ -276,7 +277,7 @@ class CompareAnalysisMixin(CompareDataMixin, CompareWorkerMixin, ComparePlotMixi
         set_button_icon(self.btn_cmp_outlier_dimensions, 'apply')
         layout.addWidget(self.btn_cmp_outlier_dimensions, 5, 2)
         self.lbl_cmp_outlier_dimensions = QLabel('备选: 未启用')
-        self.lbl_cmp_outlier_dimensions.setStyleSheet('color: #475569;')
+        set_text_tone(self.lbl_cmp_outlier_dimensions, '')
         self.lbl_cmp_outlier_dimensions.setToolTip(
             '任一启用维度判为野点，均同步剔除雷达与对应 GPS 点'
         )
@@ -314,7 +315,7 @@ class CompareAnalysisMixin(CompareDataMixin, CompareWorkerMixin, ComparePlotMixi
         layout.addWidget(actions, 6, 0, 1, 4)
 
         stats_title = QLabel('数据统计')
-        stats_title.setStyleSheet('font-weight: 600; color: #334155;')
+        set_text_tone(stats_title, '')
         layout.addWidget(stats_title, 7, 0)
         self.lbl_cmp_stat_radar_original = QLabel('雷达原始: 0 点')
         self.lbl_cmp_stat_radar_filtered = QLabel('雷达过滤后: 0 点')
@@ -324,7 +325,7 @@ class CompareAnalysisMixin(CompareDataMixin, CompareWorkerMixin, ComparePlotMixi
         self.lbl_cmp_stat_truth_aligned.setToolTip('插值后仍为 GPS 数据和 GPS 插值样点')
         self.lbl_cmp_stat_alignment_valid = QLabel('GPS 对齐后有效: --')
         self.lbl_cmp_stat_paired = QLabel('精对齐同步保留: --')
-        self.lbl_cmp_stat_alignment_valid.setStyleSheet('color: #475569;')
+        set_text_tone(self.lbl_cmp_stat_alignment_valid, '')
         layout.addWidget(self.lbl_cmp_stat_alignment_valid, 7, 2, 1, 2)
         for row, column, column_span, label in (
             (8, 0, 2, self.lbl_cmp_stat_radar_original),
@@ -334,7 +335,7 @@ class CompareAnalysisMixin(CompareDataMixin, CompareWorkerMixin, ComparePlotMixi
             (10, 0, 2, self.lbl_cmp_stat_truth_aligned),
             (10, 2, 2, self.lbl_cmp_stat_paired),
         ):
-            label.setStyleSheet('color: #475569;')
+            set_text_tone(label, '')
             layout.addWidget(label, row, column, 1, column_span)
         layout.setColumnStretch(1, 1)
         layout.setColumnStretch(3, 1)
@@ -360,7 +361,7 @@ class CompareAnalysisMixin(CompareDataMixin, CompareWorkerMixin, ComparePlotMixi
         layout.addWidget(self.spin_cmp_range_end, 0, 3)
 
         self.lbl_cmp_range_count = QLabel('当前范围: 0 / 0 样点')
-        self.lbl_cmp_range_count.setStyleSheet('color: #475569;')
+        set_text_tone(self.lbl_cmp_range_count, '')
         layout.addWidget(self.lbl_cmp_range_count, 1, 2, 1, 2)
 
         layout.addWidget(QLabel('过滤列'), 1, 0)
@@ -394,7 +395,7 @@ class CompareAnalysisMixin(CompareDataMixin, CompareWorkerMixin, ComparePlotMixi
         layout.setVerticalSpacing(4)
         for column, text in enumerate(('复核项目', '雷达字段', 'GPS 字段', '雷达修正', 'GPS 修正')):
             header = QLabel(text)
-            header.setStyleSheet('color: #64748b; font-size: 12px;')
+            set_text_tone(header, 'muted')
             layout.addWidget(header, 0, column)
         self.compare_mapping_widgets = {}
         for row, metric in enumerate(METRIC_DEFINITIONS):

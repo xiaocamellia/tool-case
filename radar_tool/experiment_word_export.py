@@ -155,7 +155,7 @@ class WordExportMixin:
         if desc:
             p.add_run(desc)
     def _add_image_caption(self, doc, ns, fig_num, caption_text):
-        """添加图片题注（图X 名称，居中#666666小五）"""
+        """添加图片题注（图X 名称，居中灰色小五）"""
         p = doc.add_paragraph()
         p.style = self._pstyle(doc, ns, 'Report_Image_Caption')
         p.add_run(f'图{fig_num}  {caption_text}')

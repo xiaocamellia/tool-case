@@ -53,6 +53,42 @@ def test_coord_ledger_3d_scene_survives_isolated_frame():
     assert len(panel._3d_view.frames) == 3
 
 
+def test_coord_ledger_tree_selection_handles_every_node():
+    """点击「账本结构」树任意节点不得抛错（record.to -> to_frame 回归）。
+
+    变换记录挂在坐标系节点下时，_on_tree_selection 会按目标坐标系取单位。
+    曾误用 TransformRecord.to（JSON 键名），实际字段是 to_frame，导致
+    AttributeError。此用例覆盖两种树视图的全部节点。
+    """
+    app = _app()
+    from radar_tool.coord_core import Ledger
+    from radar_tool.coord_ledger_panel import CoordinateLedgerPanel
+
+    panel = CoordinateLedgerPanel(None)
+    panel.ledger = Ledger.sample()
+    panel._refresh_all()
+
+    def _walk(item):
+        yield item
+        for index in range(item.childCount()):
+            yield from _walk(item.child(index))
+
+    checked = 0
+    for mode in range(panel.tree_mode.count()):
+        panel.tree_mode.blockSignals(True)
+        panel.tree_mode.setCurrentIndex(mode)
+        panel.tree_mode.blockSignals(False)
+        panel._refresh_tree()
+        app.processEvents()
+        for top in range(panel.tree.topLevelItemCount()):
+            for item in _walk(panel.tree.topLevelItem(top)):
+                panel._on_tree_selection(item, None)  # 不得抛异常
+                checked += 1
+
+    assert checked > 0, '示例账本应至少生成一个树节点'
+    panel.close()
+
+
 def test_calculator_navigation_switches_every_formula_page():
     app = _app()
     panel = CalcPanel()
