@@ -257,7 +257,7 @@ class CompareAnalysisMixin(CompareDataMixin, CompareWorkerMixin, ComparePlotMixi
         self.spin_cmp_outlier_threshold.setValue(0.0)
         self.spin_cmp_outlier_threshold.setSpecialValueText('自动 MAD')
         self.spin_cmp_outlier_threshold.setToolTip('按参考维度的粗对齐差值识别野点；0 使用 6 倍 MAD 自动阈值')
-        self.spin_cmp_outlier_threshold.valueChanged.connect(self._invalidate_fine_compare_result)
+        self.spin_cmp_outlier_threshold.valueChanged.connect(self._on_outlier_threshold_changed)
         layout.addWidget(self.spin_cmp_outlier_threshold, 5, 1)
 
         self.compare_additional_outlier_settings = {}

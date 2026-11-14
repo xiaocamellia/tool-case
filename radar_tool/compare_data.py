@@ -710,7 +710,40 @@ class CompareDataMixin:
         del metric_key
         self._invalidate_compare_result()
     def _on_compare_reference_changed(self, *_args):
+        # TR-03: 每个参考维度独立记忆野点阈值
+        self._load_outlier_threshold_for_dim()
         self._refresh_compare_additional_outlier_options()
+
+    def _load_outlier_threshold_for_dim(self):
+        """TR-03: 切换参考维度时载入该维度的野点阈值记忆。"""
+        if not hasattr(self, 'spin_cmp_outlier_threshold'):
+            return
+        dim = self.combo_cmp_reference.currentData()
+        if not dim:
+            return
+        from .settings_store import settings
+        saved = settings.get(f'module.compare.outlier.{dim}', None)
+        if saved is not None:
+            try:
+                self.spin_cmp_outlier_threshold.setValue(float(saved))
+            except (TypeError, ValueError):
+                pass
+
+    def _save_outlier_threshold_for_dim(self):
+        """TR-03: 阈值变更时保存到当前维度。"""
+        if not hasattr(self, 'spin_cmp_outlier_threshold'):
+            return
+        dim = self.combo_cmp_reference.currentData()
+        if not dim:
+            return
+        from .settings_store import settings
+        settings.set(f'module.compare.outlier.{dim}', self.spin_cmp_outlier_threshold.value())
+        settings.sync()
+
+    def _on_outlier_threshold_changed(self):
+        """TR-03: 阈值变更时保存并失效。"""
+        self._save_outlier_threshold_for_dim()
+        self._invalidate_fine_compare_result()
         self._invalidate_compare_result()
     def _refresh_compare_additional_outlier_options(self, *_args):
         button = getattr(self, 'btn_cmp_outlier_dimensions', None)
