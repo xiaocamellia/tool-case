@@ -8,7 +8,7 @@ import os
 
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout,
-    QLabel, QTabWidget, QMessageBox, QApplication,
+    QLabel, QTabWidget, QMessageBox, QApplication, QProgressBar,
 )
 from PyQt5.QtCore import Qt
 
@@ -119,6 +119,22 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
 
         self.status_label = QLabel('就绪')
         self.statusBar().addWidget(self.status_label)
+
+        # G-06: 状态栏右侧常驻进度条 + 任务入口
+        self._task_count_label = QLabel('')
+        self._task_count_label.setStyleSheet(
+            'color: #2563eb; font-size: 9pt; padding: 0 6px; cursor: pointer;'
+        )
+        self._task_count_label.mousePressEvent = self._open_task_center
+        self._task_count_label.setVisible(False)
+        self.statusBar().addPermanentWidget(self._task_count_label)
+
+        self._progress_bar = QProgressBar()
+        self._progress_bar.setFixedWidth(140)
+        self._progress_bar.setFormat('%p%')
+        self._progress_bar.setVisible(False)
+        self.statusBar().addPermanentWidget(self._progress_bar)
+
         self.version_label = QLabel(f'v{__version__}')
         self.version_label.setObjectName('version_label')
         self.version_label.setStyleSheet(
@@ -210,6 +226,31 @@ class MainWindow(QMainWindow, CompareAnalysisMixin):
             self.status_label.setText(
                 f'后台任务：{TaskRegistry.describe(snapshot)}'
             )
+        self._update_progress_bar()
+
+    def _update_progress_bar(self):
+        """根据活动任务更新状态栏进度条与任务计数（G-06）。"""
+        if not hasattr(self, '_progress_bar'):
+            return
+        active = self.task_registry.active_snapshots(self)
+        if not active:
+            self._progress_bar.setVisible(False)
+            self._task_count_label.setVisible(False)
+            return
+        # 显示第一个活动任务的进度
+        first = active[0]
+        self._progress_bar.setVisible(True)
+        self._progress_bar.setValue(first.progress)
+        count = len(active)
+        self._task_count_label.setVisible(True)
+        self._task_count_label.setText(f'任务 ({count})' if count <= 1 else f'任务 (+{count - 1})')
+
+    def _open_task_center(self, event=None):
+        from .task_center import TaskCenterDialog
+        dialog = TaskCenterDialog.get_instance(self.task_registry, self)
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
 
     def _running_background_threads(self):
         return [
