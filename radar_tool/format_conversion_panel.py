@@ -118,6 +118,7 @@ class FormatConversionPanel(QWidget):
         super().__init__(parent)
         self.preview_result = None  # type: TrConversionResult | None
         self._preview_source_path = ''
+        self._preview_fingerprint = None
         self._parse_thread = None
         self._parse_worker = None
         self._timeout_timer = None
@@ -366,6 +367,7 @@ class FormatConversionPanel(QWidget):
     def _clear_preview(self):
         self.preview_result = None
         self._preview_source_path = ''
+        self._preview_fingerprint = None
         self.frame_table.setRowCount(0)
         self.data_table.setRowCount(0)
         for label, caption in zip(
@@ -456,6 +458,7 @@ class FormatConversionPanel(QWidget):
     def _show_parse_failure(self, message):
         self.preview_result = None
         self._preview_source_path = ''
+        self._preview_fingerprint = None
         self._preview_in_progress = False
         self._pending_convert = False
         self._set_parse_controls(False)
@@ -487,6 +490,17 @@ class FormatConversionPanel(QWidget):
             return
         self.preview_result = result
         self._preview_source_path = self.source_edit.text().strip()
+        # FC-01: 记录文件指纹 (abspath, st_mtime_ns, st_size)
+        try:
+            _src = self._preview_source_path
+            _stat = os.stat(_src)
+            self._preview_fingerprint = (
+                os.path.normcase(os.path.abspath(_src)),
+                _stat.st_mtime_ns,
+                _stat.st_size,
+            )
+        except OSError:
+            self._preview_fingerprint = None
         self._render_result(result)
         self._set_status('预检通过', 'success')
         pending_convert = self._pending_convert
@@ -519,6 +533,7 @@ class FormatConversionPanel(QWidget):
         self._finish_parse_job()
         self.preview_result = None
         self._preview_source_path = ''
+        self._preview_fingerprint = None
         self._set_status('已取消', 'idle')
         self.log_text.setPlainText(message)
         self.frame_table.setRowCount(0)
@@ -600,11 +615,27 @@ class FormatConversionPanel(QWidget):
             if answer != QMessageBox.Yes:
                 return False
 
-        source_current = (
-            self.preview_result is not None
-            and os.path.normcase(os.path.abspath(self._preview_source_path))
-            == os.path.normcase(os.path.abspath(source))
-        )
+        # FC-01: 按 (abspath, st_mtime_ns, st_size) 指纹判断预检是否仍有效
+        source_current = False
+        if self.preview_result is not None and not self._preview_in_progress:
+            try:
+                abspath = os.path.normcase(os.path.abspath(source))
+                cached = getattr(self, '_preview_fingerprint', None)
+                if cached is not None:
+                    stat = os.stat(source)
+                    fingerprint = (abspath, stat.st_mtime_ns, stat.st_size)
+                    source_current = (fingerprint == cached)
+                    if not source_current:
+                        self.log_text.append('\n源文件已变动，重新预检…')
+                        self.preview_result = None
+                        self._preview_source_path = ''
+                else:
+                    source_current = (
+                        os.path.normcase(os.path.abspath(self._preview_source_path))
+                        == abspath
+                    )
+            except OSError:
+                source_current = False
         if source_current and not self._preview_in_progress:
             return self._perform_convert()
         if self._preview_in_progress:
