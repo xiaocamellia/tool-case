@@ -482,16 +482,16 @@ class CompareDataMixin:
             self.btn_cmp_export.setEnabled(False)
         if hasattr(self, 'btn_cmp_run_fine'):
             self.btn_cmp_run_fine.setEnabled(False)
+        # TR-06: 统一失效 — 清空指标表并写失效提示
+        if hasattr(self, 'table_cmp_metrics'):
+            self.table_cmp_metrics.setRowCount(0)
+            from PyQt5.QtWidgets import QTableWidgetItem
+            self.table_cmp_metrics.setRowCount(1)
+            self.table_cmp_metrics.setItem(0, 0, QTableWidgetItem('参数已变更，结果已失效'))
         self._update_compare_statistics()
-        self._set_compare_figure_message(
-            'range', '点击“绘制原始数据”查看雷达截取前后对比'
-        )
-        self._set_compare_figure_message(
-            'interpolation', '完成第 1 步粗对齐后显示 GPS 时间插值结果'
-        )
-        self._set_compare_figure_message(
-            'coarse_difference', '完成第 1 步粗对齐后显示雷达 - GPS 差值'
-        )
+        for key in ('range', 'interpolation', 'coarse_difference',
+                    'overview', 'error', 'distribution', 'trajectory', 'algorithms'):
+            self._set_compare_figure_message(key, '参数已变更，结果已失效')
     def _invalidate_fine_compare_result(self, *_args):
         """Keep a valid coarse result while invalidating fine correction."""
         self.compare_last_result = None
