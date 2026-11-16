@@ -6,7 +6,7 @@
   "artifacts": [
     {
       "path": "sbom.cdx.json",
-      "sha256": "ba1ed18b1ca9414321a1905909dcd05fc7197d1f1521db2c06920a0d4ecbe741",
+      "sha256": "0136dca5313c7e3339161c6d78e204cea7cac3509afb4ab87fb6e8f8fa536f62",
       "size": 6623
     },
     {
@@ -24,7 +24,7 @@
       "version": "3.12.7"
     },
     "source_date_epoch": 1700000000,
-    "source_sha256": "bc3923b53af48d73668c2b40a51cfaba2fd3309f4baeb25b8f5681eb5e53bcf1"
+    "source_sha256": "8c8b88c13322f0e544d2d3352885aa6728ef2667e7a208afa063e04753047d8f"
   },
   "format": "portable-radar-toolbox-build-manifest/v1"
 }

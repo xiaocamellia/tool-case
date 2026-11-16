@@ -11,10 +11,12 @@ from .errors import ValidationError
 from .input_limits import (
     InputResourceError,
     MAX_COLUMNS,
-    ensure_file_size,
     preflight_excel,
     validate_table_shape,
 )
+
+# 本模块（数据绘图数据加载）不执行文件大小上限（V1.2.2 起取消 512 MB 预检），
+# 行/列上限仍由 validate_limits 控制；格式转换/校正/真值复核各自保留大小预检。
 
 
 TEXT_EXTENSIONS = {'.txt', '.csv', '.dat', '.log'}
@@ -35,7 +37,6 @@ class DataLoader:
         if not os.path.isfile(col_filepath):
             raise ValidationError('列名文件不存在')
 
-        ensure_file_size(col_filepath, label='列名文件')
         encodings = ['utf-8-sig', 'utf-8', 'gb18030', 'gbk', 'cp936']
         for encoding in encodings:
             try:
@@ -302,7 +303,6 @@ def read_text_table(
     nrows=None,
     validate_limits=True,
 ):
-    ensure_file_size(filepath, label=label)
     read_plan = _build_text_read_plan(filepath, delimiter_candidates)
     return _read_text_table_with_plan(
         filepath,
@@ -367,7 +367,6 @@ def _unique_column_names(names, count):
 
 
 def _read_text_numeric_table(filepath, validate_limits=True):
-    ensure_file_size(filepath, label='数据文件')
     read_plan = _build_text_read_plan(filepath, SIMPLE_TEXT_DELIMITERS)
     separator = read_plan[1] or TEXT_SEPARATOR
     detected_headers = _detect_header_from_sample(
@@ -396,7 +395,6 @@ def _read_text_numeric_table(filepath, validate_limits=True):
 
 def read_excel_table(filepath, validate_limits=True):
     extension = os.path.splitext(filepath)[1].lower()
-    ensure_file_size(filepath, label='Excel 文件')
     if validate_limits:
         preflight_excel(filepath, scan_cells=False)
     if extension == '.xls':

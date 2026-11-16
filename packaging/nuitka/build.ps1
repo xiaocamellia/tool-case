@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$Python = "python",
-    [string]$Version = "1.2.1",
+    [string]$Version = "1.2.2",
     [string]$Jobs = "auto",
     [string]$CertificateThumbprint,
     [string]$CertificatePath,
@@ -318,6 +318,7 @@ try {
     }
 
     $ImageRoot = Join-Path $ProjectRoot "image"
+    $ConfigRoot = Join-Path $ProjectRoot "Config"
     $EntryScript = Join-Path $ProjectRoot "radar_tool\run.py"
     $JobArguments = @()
     if ($Jobs -and $Jobs -ne "auto") {
@@ -343,6 +344,7 @@ try {
         "--include-package=xlrd",
         "--include-package-data=xlrd",
         "--include-data-dir=$ImageRoot=image",
+        "--include-data-dir=$ConfigRoot=Config",
         "--output-dir=$CompileRoot",
         "--output-filename=PortableRadarToolbox.exe",
         "--company-name=Portable Radar Toolbox",

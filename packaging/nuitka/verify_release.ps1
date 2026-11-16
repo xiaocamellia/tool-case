@@ -12,12 +12,16 @@ Set-StrictMode -Version Latest
 $DistributionRoot = (Resolve-Path -LiteralPath $DistributionRoot).Path
 $ExecutablePath = Join-Path $DistributionRoot "PortableRadarToolbox.exe"
 $IconPath = Join-Path $DistributionRoot "image\rose.ico"
+$Dat2TxtConfigPath = Join-Path $DistributionRoot "Config\receive\内部工况遥测\载人雷达内部工况接口遥测.csv"
 
 if (-not (Test-Path -LiteralPath $ExecutablePath -PathType Leaf)) {
     throw "Missing packaged executable: $ExecutablePath"
 }
 if (-not (Test-Path -LiteralPath $IconPath -PathType Leaf)) {
     throw "Missing packaged icon resource: $IconPath"
+}
+if (-not (Test-Path -LiteralPath $Dat2TxtConfigPath -PathType Leaf)) {
+    throw "Missing packaged dat2txt field definition: $Dat2TxtConfigPath"
 }
 
 $RuntimeMarkers = @(

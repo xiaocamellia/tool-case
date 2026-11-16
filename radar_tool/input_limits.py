@@ -223,9 +223,12 @@ def _preflight_xlsx_archive(
 
 
 def preflight_excel(filepath, scan_cells: bool = True) -> None:
-    """Validate archive size, sheet count, and worksheet dimensions."""
+    """Validate extracted size, sheet count, and worksheet dimensions.
 
-    ensure_file_size(filepath, label='Excel 文件')
+    不做文件大小预检：数据绘图加载链路（data_loader）自 V1.2.2 起取消
+    512 MB 文件大小上限；解压总大小（防 zip 炸弹）与行列上限仍然生效。
+    """
+
     if zipfile.is_zipfile(filepath):
         _preflight_xlsx_archive(filepath, scan_cells=scan_cells)
         return

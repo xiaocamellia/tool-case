@@ -30,6 +30,15 @@ def run_smoke_test() -> None:
     if QPixmap(resource_path).isNull():
         raise RuntimeError("应用图标资源无法解析")
 
+    dat2txt_spec = get_resource_path(
+        "Config", "receive", "内部工况遥测", "载人雷达内部工况接口遥测.csv"
+    )
+    if not os.path.isfile(dat2txt_spec):
+        # Config 目录免远程同步（仅本地保留）：源码树缺失不拦截；
+        # 打包版必须随包携带，否则 dat 导出 txt 功能不可用。
+        if is_frozen():
+            raise FileNotFoundError(f"缺少 dat 导出字段定义资源: {dat2txt_spec}")
+
     if importlib.util.find_spec("docx") is not None:
         from docx import Document
 

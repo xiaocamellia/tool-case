@@ -1,4 +1,4 @@
-﻿# ========== Nuitka 编译产物 ==========
+# ========== Nuitka 编译产物 ==========
 *.exe
 *.dist/
 *.build/
@@ -29,6 +29,10 @@ __pycache__/
 dist/
 build/
 
+# ========== 免远程同步（仅本地，不入库/不推远程）==========
+# dat2txt 字段定义（成熟软件协议 CSV）：随包分发但不进远程仓库
+Config/
+
 # ========== 日志/缓存 ==========
 日志/
 测向校正/
@@ -48,3 +52,11 @@ venv/
 # Local scratch files
 tmp*.json
 PACKAGING_GUIDE.md
+.pytest-temp/base/test_report_exports0/report.docx
+.pytest-temp/shots/view_dat2txt.png
+.pytest-temp/shots/viz_dat2txt_tab.png
+.pytest-temp/shots/view_plot.png
+.pytest-temp/shots/viz_plot_tab.png
+.pytest-temp/base/test_report_exports0/report.docx
+.pytest-temp/base/test_report_exports0/report.docx
+.pytest-temp/base/test_report_exports0/report.docx

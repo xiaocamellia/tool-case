@@ -282,7 +282,7 @@
     "properties": [
       {
         "name": "radar_tool:source_sha256",
-        "value": "bc3923b53af48d73668c2b40a51cfaba2fd3309f4baeb25b8f5681eb5e53bcf1"
+        "value": "8c8b88c13322f0e544d2d3352885aa6728ef2667e7a208afa063e04753047d8f"
       }
     ],
     "timestamp": "2023-11-14T22:13:20Z",
@@ -294,7 +294,7 @@
       }
     ]
   },
-  "serialNumber": "urn:uuid:36a3a14f-9714-5391-8879-de7d81902bbb",
+  "serialNumber": "urn:uuid:779d182c-d3a3-57fc-989d-437e009f3a88",
   "specVersion": "1.5",
   "version": 1
 }

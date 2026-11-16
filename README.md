@@ -1,4 +1,4 @@
-# 🛰️ 便携化工具箱 (Portable Radar Toolbox) V1.2.1
+# 🛰️ 便携化工具箱 (Portable Radar Toolbox) V1.2.2
 
 [![Python](https://img.shields.io/badge/Python-3.12%2B-blue)](https://www.python.org/)
 [![PyQt5](https://img.shields.io/badge/GUI-PyQt5-green)](https://www.riverbankcomputing.com/software/pyqt/)
@@ -20,7 +20,7 @@
 
 | 模块 | 功能 | 说明 |
 |------|------|------|
-| 数据可视化处理 | 📊 Radar Data Visualizer | 雷达挂飞数据加载、切片、过滤、多图绘制、叠加对比、高清导出 |
+| 数据可视化处理 | 📊 Radar Data Visualizer | 雷达挂飞数据加载、切片、过滤、多图绘制、叠加对比、高清导出、dat 导出 txt |
 | 数据真值复核 | 📈 Data Truth Review | GPS 时间域插值、雷达样点两阶段对齐、多维联合剔野与批次结果导出 |
 | 干涉仪测向仿真 | 📡 Interferometer DF Sim | 阵列配置、DOA估计算法仿真与性能评估 |
 | 测向校正自动化 | Direction Finding Calibration | 标定数据导入、参数寻优、批次参数复用与误差对比 |
@@ -44,6 +44,7 @@
 - **曲线管理**: 支持移除/清空绘图项
 - **统计显示**: 自动计算并显示每条曲线的均值 (μ)、标准差 (σ)、最大值、最小值、样本数 (N)
 - **高清导出**: 支持导出 PNG (600dpi)、PDF、SVG、TIFF 格式
+- **DAT 导出 TXT（V1.2.2）**: 页签内并行子页，把雷达模拟器 `.dat` 定长帧导出为与成熟软件逐字节一致的 GBK 文本（含 `列名.txt`），完成后一键载入数据集
 - **交互导航**: matplotlib 原生工具栏（缩放、平移、保存等）
 - **独立面板架构**: 数据可视化已拆分为独立 `VisualizationPanel`，主窗口仅负责页面切换与全局状态
 
@@ -314,6 +315,11 @@ python -m pip install --no-deps -r requirements-build.lock
 ---
 
 ## 📝 近期更新 | Recent Changes
+
+### 2026-11-16（V1.2.2）
+
+- **dat 导出 txt（数据可视化处理）**：数据可视化页签改为「数据绘图 / DAT 导出 TXT」双子页，内置雷达模拟器 `.dat` 定长帧导出能力（与成熟软件导出逐字节一致的 GBK 文本 + 配套 `列名.txt`）。支持 6 种数据类型、起止时间闭区间过滤、采样间隔、导出列勾选（按 CSV 顺序输出）、进度与残帧告警；导出完成后可一键把 txt 载入「数据绘图」数据集列表。字段定义随包分发（`Config/receive`），亦可用 `DAT2TXT_CONFIG` 指向外部 Config。
+- **取消数据加载 512 MB 上限（数据可视化处理）**：数据绘图的数据/列名文件加载不再受 `limits/max_file_mb` 文件大小预检限制，大文件仅受内存与行列上限约束；格式转换、测向校正、数据真值复核的大小预检保持不变。
 
 ### 2026-11-14（V1.2.1）
 

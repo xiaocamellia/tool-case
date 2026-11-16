@@ -24,6 +24,7 @@ from PyQt5.QtGui import QFont, QColor
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 
 from .data_loader import DataLoader
+from .dat2txt_panel import Dat2TxtPanel
 from .models import DatasetRecord, PlotDataItem, PlotViewRecord
 from .plotting import (
     MatplotlibCanvas, ASPECT_PRESETS, EXPORT_WIDTH_PRESETS_CM, FIG_SIZE_PRESETS,
@@ -233,8 +234,15 @@ class VisualizationPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
+        # 双子页：数据绘图（主工作区）与 DAT 导出 TXT（并行辅助功能）
+        self.workspace_tabs = QTabWidget()
+        plot_page = QWidget()
+        plot_layout = QVBoxLayout(plot_page)
+        plot_layout.setContentsMargins(0, 0, 0, 0)
+        plot_layout.setSpacing(6)
+
         top_widget = self._create_top_controls()
-        layout.addWidget(top_widget)
+        plot_layout.addWidget(top_widget)
 
         splitter = QSplitter(Qt.Horizontal)
         left_widget = self._create_left_panel()
@@ -249,7 +257,12 @@ class VisualizationPanel(QWidget):
         splitter.setStretchFactor(0, 2)
         splitter.setStretchFactor(1, 3)
         splitter.setSizes([360, 1080])
-        layout.addWidget(splitter, 1)
+        plot_layout.addWidget(splitter, 1)
+
+        self.workspace_tabs.addTab(plot_page, '数据绘图')
+        self.dat2txt_panel = Dat2TxtPanel(self)
+        self.workspace_tabs.addTab(self.dat2txt_panel, 'DAT 导出 TXT')
+        layout.addWidget(self.workspace_tabs)
 
         self._relax_minimum_widths()
 
@@ -804,6 +817,13 @@ class VisualizationPanel(QWidget):
         )
         if not filepaths:
             logger.info('用户操作: 取消加载数据文件')
+            return
+        self.load_dataset_paths(filepaths)
+
+    def load_dataset_paths(self, filepaths):
+        """把已知路径的数据文件加载为数据集（供对话框与 dat 导出联动共用）。"""
+        filepaths = [str(path) for path in filepaths if str(path).strip()]
+        if not filepaths:
             return
         if self._dataset_load_thread is not None:
             self.main_window.status_label.setText('已有数据加载任务正在后台运行')

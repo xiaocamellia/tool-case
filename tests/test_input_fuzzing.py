@@ -15,13 +15,14 @@ from radar_tool.format_conversion import (
 )
 
 
-def test_large_text_file_is_rejected_before_parsing(tmp_path, monkeypatch):
+def test_text_file_size_limit_no_longer_blocks_data_loading(tmp_path, monkeypatch):
+    """数据绘图加载链路自 V1.2.2 起取消 512 MB 文件大小上限（回归）。"""
     path = tmp_path / 'large.csv'
     path.write_text('1,2\n3,4\n', encoding='utf-8')
     monkeypatch.setattr('radar_tool.input_limits.MAX_FILE_SIZE', 4)
 
-    with pytest.raises(ValidationError, match='大小超限'):
-        read_numeric_table(path)
+    table = read_numeric_table(path)
+    assert table.shape == (2, 2)
 
 
 def test_corrupt_xlsx_is_rejected_as_structural_error(tmp_path):

@@ -117,7 +117,7 @@ def test_export_metadata_contains_traceability_fields():
         parameters={'threshold': 3},
     )
 
-    assert metadata['version'] == APP_VERSION == '1.2.1'
+    assert metadata['version'] == APP_VERSION == '1.2.2'
     assert metadata['schema_version'] == 1
     assert metadata['input_summary'] == {'source': 'input.csv', 'rows': 12}
     assert metadata['parameters'] == {'threshold': 3}
